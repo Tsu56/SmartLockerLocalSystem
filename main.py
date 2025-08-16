@@ -1,11 +1,25 @@
 from kivy.app import App
+from kivymd.app import MDApp
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.button import Button
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.screenmanager import ScreenManager, Screen
+from kivy.lang import Builder
+from kivy.uix.gridlayout import GridLayout
+from kivymd.uix.button import MDRaisedButton
+from kivymd.uix.button import MDTextButton
+from kivymd.uix.textfield import MDTextField
+from kivymd.uix.snackbar import Snackbar
+from kivy.core.window import Window
+
+
 import serial
 import time
 
+
+
 # Serial configuration
-ser = serial.Serial('/dev/ttyUSB0', 9600, timeout=1)
+# ser = serial.Serial('/dev/ttyUSB0', 9600, timeout=1)
 
 
 def send_command(address, command):
@@ -96,11 +110,54 @@ class LockerControl(GridLayout):
             self.add_widget(btn_open)
             self.add_widget(btn_check)
 
+class LoginScreen(Screen):
+    def do_login(self):
+        username = self.ids.username_input.text
+        password = self.ids.password_input.text
+        print(f"Username: {username}, Password: {password}")
+        # ตรงนี้คุณสามารถเพิ่มการตรวจสอบ username/password ได้
+        if username == "admin" and password == "1234":
+            self.manager.current = "locker"
+        else:
+            print("Login Failed!")
 
-class LockerApp(App):
+class LockerScreen(Screen):
+    def on_enter(self, *args):
+        # แสดง LockerControl ตอนเข้าหน้า
+        self.clear_widgets()
+        self.add_widget(LockerControl())
+
+class LoginApp(MDApp):
     def build(self):
-        return LockerControl()
+        self.theme_cls.primary_palette = "Blue"
+        self.theme_cls.theme_style = "Light"  # ลอง "Dark" ได้
+        root = Builder.load_file("login.kv")
+        Window.bind(on_key_down=self.on_key_down)   # <== ฟัง event keyboard
+        return root
+    
+    def on_key_down(self, window, key, scancode, codepoint, modifiers):
+        # key == 9 หมายถึง TAB
+        if key == 9:
+            sm = self.root
+            if sm.current == "login":  # ตรวจว่าตอนนี้อยู่ที่หน้าล็อกอิน
+                login_screen = sm.get_screen("login")
+                if login_screen.ids.username_input.focus:
+                    login_screen.ids.username_input.focus = False
+                    login_screen.ids.password_input.focus = True
+                    return True
+                elif login_screen.ids.password_input.focus:
+                    login_screen.ids.username_input.focus = True
+                    login_screen.ids.password_input.focus = False
+                    return True
+        
+        elif key == 13:  # key == 13 หมายถึง ENTER
+            sm = self.root
+            if sm.current == "login":
+                login_screen = sm.get_screen("login")
+                login_screen.do_login()
+        return False
+        
 
 
 if __name__ == '__main__':
-    LockerApp().run()
+    LoginApp().run()

@@ -1,0 +1,68 @@
+ScreenManager:
+    LoginScreen:
+    LockerScreen:
+
+<ButtonRounded@Button>:
+    background_color: 0, 0, 0, 0  # ทำให้ปุ่มโปร่งใส
+    size_hint: None, None
+    size: 150, 50
+    canvas.before:
+        Color:
+            rgba: self.bg_color if hasattr(self, 'bg_color') else (0, 0.5, 1, 1)
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [25]  # ปรับโค้งของมุม
+            
+<LoginScreen>:
+    name: "login"
+    MDBoxLayout:
+        orientation: "vertical"
+        spacing: dp(20)
+        padding: dp(200)
+
+        MDLabel:
+            text: "Login"
+            halign: "center"
+            font_style: "H5"
+
+        MDTextField:
+            id: username_input
+            hint_text: "Username"
+            helper_text: "Input your username"
+            helper_text_mode: "on_focus"
+            icon_right: "account"
+            mode: "fill"   # หรือ "fill" / "line"
+            
+        MDTextField:
+            id: password_input
+            hint_text: "Password"
+            helper_text: "Input your Password"
+            helper_text_mode: "on_focus"
+            password: True
+            icon_right: "lock"
+            mode: "fill"
+        
+        ButtonRounded:
+            text: "Login"
+            bg_color: 0, 0.5, 1, 1
+            pos_hint: {"center_x": 0.5}
+            on_press: self.bg_color = 0, 0.51, 1, 1
+            on_release:
+                self.bg_color = 0, 0.5, 1, 1
+                root.do_login()
+
+<LockerScreen>:
+    name: "locker"
+    MDBoxLayout:
+        orientation: "vertical"
+        spacing: dp(20)
+        padding: dp(20)
+        MDLabel:
+            text: "Locker Control Panel"
+            halign: "center"
+            font_style: "H5"
+        ScrollView:
+            LockerControl:
+                size_hint_y: None
+                height: self.minimum_height
