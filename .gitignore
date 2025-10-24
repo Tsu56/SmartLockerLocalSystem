@@ -1,2 +1,3 @@
 smartlocker-venv/
 .env
+__pycache__/
