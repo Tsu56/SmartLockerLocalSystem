@@ -1,0 +1,46 @@
+#: import get_color_from_hex kivy.utils.get_color_from_hex
+#: set LIGHT_BG get_color_from_hex("#F7F8FC")
+#: set DARK_BLUE get_color_from_hex("#34495E")
+
+<QRScanScreen@MDScreen>:
+    name: "qr_scan_screen"
+    md_bg_color: LIGHT_BG
+    
+    MDBoxLayout:
+        orientation: 'vertical'
+        padding: "30dp"
+        spacing: "30dp"
+        
+        MDTopAppBar:
+            title: "Scan QR Code"
+            left_action_items: [["arrow-left", lambda x: app.go_back()]]
+            md_bg_color: app.theme_cls.primary_color
+            elevation: 4
+            
+        MDLabel:
+            text: "Point the camera at the QR Code on your device or document."
+            halign: "center"
+            font_style: "H6"
+            theme_text_color: "Custom"
+            text_color: DARK_BLUE
+            size_hint_y: None
+            height: "50dp"
+
+        # พื้นที่สำหรับแสดงฟีดกล้อง (ในสภาพแวดล้อมจริงจะต้องใช้ Kivy Camera Widget)
+        MDCard:
+            size_hint: 0.8, 0.7
+            pos_hint: {"center_x": 0.5}
+            md_bg_color: get_color_from_hex("#BBBBBB")
+            elevation: 2
+            
+            MDLabel:
+                text: "Camera Feed / QR Scanning Area"
+                halign: "center"
+                valign: "center"
+                theme_text_color: "Primary"
+                
+        MDTextButton:
+            text: "Cancel Scan"
+            size_hint_x: 0.5
+            pos_hint: {"center_x": 0.5}
+            on_release: app.go_back()

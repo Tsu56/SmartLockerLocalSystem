@@ -1,0 +1,109 @@
+#: import get_color_from_hex kivy.utils.get_color_from_hex
+#: set PRIMARY_COLOR app.theme_cls.primary_color
+
+# Custom Widget สำหรับการ์ดตัวเลือกการล็อกอิน
+<LoginOptionCard@MDCard>:
+    size_hint: None, None
+    size: "150dp", "150dp"
+    md_bg_color: get_color_from_hex("#e5f2f9ff")
+    
+    # ใช้ on_release เพื่อเรียกฟังก์ชันใน main.py และส่งชื่อหน้าจอที่ต้องการไป
+    on_release: app.select_login_method(root.target_screen)
+    
+    target_screen: "" # ชื่อหน้าจอเป้าหมาย
+    icon_name: ""
+    card_text: ""
+
+    MDBoxLayout:
+        orientation: 'vertical'
+        padding: "20dp"
+        spacing: 0
+        halign: 'center'
+        valign: 'center'
+        
+        MDIcon:
+            icon: root.icon_name
+            font_size: "40sp"
+            theme_text_color: "Primary"
+            halign: 'center'
+            size_hint: None, None
+            size: self.font_size, self.font_size
+            pos_hint: {'center_x': 0.5}
+
+        MDLabel:
+            text: root.card_text
+            font_style: "Button"
+            theme_text_color: "Custom"
+            text_color: 0.212, 0.267, 0.345, 1
+            halign: 'center'
+
+# หน้าจอหลักที่บรรจุการ์ดทั้งหมด
+<MainScreen@MDScreen>:
+    name: "main_screen"
+    
+    MDFloatLayout:
+        # 1. ข้อความต้อนรับ
+        MDLabel:
+            text: "Welcome to Smart Locker"
+            halign: "center"
+            font_style: "H3"
+            theme_text_color: "Primary"
+            pos_hint: {'center_x': 0.5, 'y': 0.86}
+            size_hint_y: None
+            height: "50dp"
+
+        # 2. ข้อความเลือกวิธีการเข้าสู่ระบบ
+        MDLabel:
+            text: "Please select your login method."
+            halign: "center"
+            font_style: "Subtitle1"
+            theme_text_color: "Secondary"
+            pos_hint: {'center_x': 0.5, 'y': 0.76}
+            size_hint_y: None
+            height: "30dp"
+
+        # 3. โครงสร้าง Grid/Layout สำหรับการ์ดตัวเลือก
+        MDBoxLayout:
+            orientation: 'vertical'
+            size_hint: None, None
+            size: "700dp", "550dp" 
+            pos_hint: {'center_x': 0.675, 'center_y': 0.58}
+            padding: 0
+            
+            # Row 1: ID Card และ RFID Tag
+            MDBoxLayout:
+                orientation: 'horizontal'
+                size_hint_y: None
+                height: "200dp"
+                spacing: "30dp"
+                
+                # Card 1: ID Card (ล็อกอินด้วยการเสียบบัตร ID Card)
+                LoginOptionCard:
+                    target_screen: "id_card_login"
+                    icon_name: "card-account-details-outline"
+                    card_text: "ID Card"
+                
+                # Card 2: RFID Staff Tag (ใช้หน้าจอเดียวกันกับการ์ด แต่เป็นคนละกระบวนการ)
+                LoginOptionCard:
+                    target_screen: "id_card_login" # ใช้หน้าจอเดียวกันกับ ID Card
+                    icon_name: "nfc-tap"
+                    card_text: "RFID Staff Tag"
+
+            # Row 2: QR Code และ Username/Password
+            MDBoxLayout:
+                orientation: 'horizontal'
+                size_hint_y: None
+                height: "200dp"
+                spacing: "30dp"
+                
+                # Card 3: Scan QR Code
+                LoginOptionCard:
+                    target_screen: "qr_scan_screen"
+                    icon_name: "qrcode-scan"
+                    card_text: "Scan QR Code"
+                
+                # Card 4: Username/Password
+                LoginOptionCard:
+                    target_screen: "user_pass_login"
+                    icon_name: "account-lock-open-outline"
+                    card_text: "Username / Password"

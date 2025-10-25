@@ -1,0 +1,110 @@
+#: import get_color_from_hex kivy.utils.get_color_from_hex
+#: set LIGHT_BG get_color_from_hex("#F7F8FC")
+#: set DARK_BLUE get_color_from_hex("#34495E")
+#: set PRIMARY_BLUE get_color_from_hex("#4285F4")
+
+<IDCardLoginScreen@MDScreen>:
+    name: "id_card_login"
+    md_bg_color: LIGHT_BG
+
+    # ใช้ FloatLayout เพื่อจัดเรียงองค์ประกอบที่ไม่อยู่ใน Header/Footer
+    MDFloatLayout:
+        # 1. โลโก้และชื่อแบรนด์ (CareLock)
+        MDBoxLayout:
+            orientation: 'horizontal'
+            size_hint: 0.8, None
+            height: "50dp"
+            pos_hint: {'center_x': 0.5, 'top': 0.95}
+            
+            MDIcon:
+                icon: "plus-circle-outline"
+                font_size: "24sp"
+                theme_text_color: "Custom"
+                text_color: PRIMARY_BLUE
+                size_hint_x: None
+                width: self.font_size
+            
+            MDLabel:
+                text: "CareLock"
+                font_style: "Button"
+                theme_text_color: "Custom"
+                text_color: DARK_BLUE
+                valign: 'middle'
+
+        # 2. พื้นที่หลักสำหรับภาพประกอบ
+        MDBoxLayout:
+            orientation: 'vertical'
+            size_hint: None, None
+            size: "300dp", "400dp" # ขนาดคงที่
+            pos_hint: {'center_x': 0.5, 'center_y': 0.55}
+            padding: "20dp"
+            spacing: "20dp"
+            
+            # 2.1 ภาพประกอบการ์ด (จำลองโดยใช้ MDCard และ MDIcon)
+            MDFloatLayout:
+                size_hint_y: None
+                height: "250dp"
+                
+                # Card Reader Base (ฐานสีเทาอ่อน)
+                MDCard:
+                    size_hint: 1, 0.4
+                    pos_hint: {'center_x': 0.5, 'center_y': 0.45}
+                    md_bg_color: get_color_from_hex("#E0E0E0")
+                    elevation: 1
+                    radius: 10
+                    
+                    MDLabel:
+                        text: "____________________" # จำลองช่องเสียบ
+                        halign: 'center'
+                        font_size: "30sp"
+                        pos_hint: {'center_y': 0.5}
+                        
+                # ID Card (บัตรสีน้ำเงินสดใส)
+                MDCard:
+                    size_hint: 0.5, 0.6
+                    pos_hint: {'center_x': 0.5, 'top': 1}
+                    md_bg_color: PRIMARY_BLUE
+                    elevation: 5
+                    radius: 10
+                    
+                    MDIcon:
+                        icon: "card-account-details-outline"
+                        font_size: "40sp"
+                        theme_text_color: "Custom"
+                        text_color: get_color_from_hex("#FFFFFF")
+                        pos_hint: {'center_x': 0.5, 'center_y': 0.65}
+                        
+                    MDLabel:
+                        text: "ID"
+                        halign: 'center'
+                        theme_text_color: "Custom"
+                        text_color: get_color_from_hex("#FFFFFF")
+                        font_style: "Caption"
+                        pos_hint: {'center_x': 0.5, 'center_y': 0.25}
+
+            # 2.2 คำแนะนำ
+            MDLabel:
+                text: "Present your ID card below"
+                halign: "center"
+                font_style: "H6"
+                theme_text_color: "Custom"
+                text_color: DARK_BLUE
+                size_hint_y: None
+                height: self.texture_size[1]
+                
+        # 3. สถานะ (Status) ที่ด้านล่างสุด
+        MDLabel:
+            id: status_label
+            text: "Status: Ready"
+            halign: "center"
+            font_style: "Caption"
+            theme_text_color: "Secondary"
+            pos_hint: {'center_x': 0.5, 'y': 0.05}
+            size_hint_y: None
+            height: "20dp"
+            
+        # 4. ปุ่มยกเลิก (ซ่อนอยู่ด้านหลัง)
+        MDTextButton:
+            text: "CANCEL"
+            pos_hint: {'right': 0.95, 'y': 0.02} # อยู่มุมล่างขวา
+            on_release: app.go_back()

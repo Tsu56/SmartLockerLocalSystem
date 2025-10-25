@@ -1,0 +1,61 @@
+#: import get_color_from_hex kivy.utils.get_color_from_hex
+#: set LIGHT_BG get_color_from_hex("#F7F8FC")
+#: set DARK_BLUE get_color_from_hex("#34495E")
+
+<UserPassLoginScreen@MDScreen>:
+    name: "user_pass_login"
+    md_bg_color: LIGHT_BG
+    
+    MDBoxLayout:
+        orientation: 'vertical'
+        padding: "30dp"
+        spacing: "30dp"
+        
+        MDTopAppBar:
+            title: "Username / Password Login"
+            left_action_items: [["arrow-left", lambda x: app.go_back()]]
+            md_bg_color: app.theme_cls.primary_color
+            elevation: 4
+            
+        MDLabel:
+            text: "Enter your credentials to proceed."
+            halign: "center"
+            font_style: "H6"
+            theme_text_color: "Custom"
+            text_color: DARK_BLUE
+            size_hint_y: None
+            height: "50dp"
+
+        MDBoxLayout:
+            orientation: 'vertical'
+            size_hint: 0.7, None
+            height: "250dp"
+            pos_hint: {"center_x": 0.5, "center_y": 0.5}
+            spacing: "30dp"
+            
+            MDTextField:
+                id: username_field
+                hint_text: "Username"
+                helper_text: "Enter your hospital network username"
+                icon_left: "account"
+                mode: "rectangle"
+                
+            MDTextField:
+                id: password_field
+                hint_text: "Password"
+                helper_text: "Enter your password"
+                icon_left: "lock"
+                mode: "rectangle"
+                password: True
+                
+            MDRaisedButton:
+                text: "LOG IN"
+                size_hint_x: 0.8
+                pos_hint: {"center_x": 0.5}
+                on_release: app.show_toast(f"Attempting login for: {username_field.text}")
+                
+            MDTextButton:
+                text: "Forgot Password?"
+                size_hint_x: 0.8
+                pos_hint: {"center_x": 0.5}
+                on_release: app.show_toast("Redirecting to password recovery.")
