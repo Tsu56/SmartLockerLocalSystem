@@ -15,25 +15,34 @@ class ThaiSmartCardReader:
         self.reader = None
 
     def card_present(self):
-        r = readers()
-        if not r:
-            return False
-        reader = r[0]
         try:
-            conn = reader.createConnection()
-            try:
-                conn.connect()  # จะ fail ถ้า card unpowered
-            except NoCardException:
+            r = readers()
+            print("DEBUG: Readers list:", r)
+            if not r:
+                print("DEBUG: No readers found.")
                 return False
+            reader = r[0]
+            try:
+                conn = reader.createConnection()
+                try:
+                    conn.connect()  # จะ fail ถ้า card unpowered
+                    print("DEBUG: Card connected successfully.")
+                except NoCardException:
+                    print("DEBUG: No card inserted.")
+                    return False
+                except Exception as e:
+                    print("DEBUG: Other connect error:", e)
+                    return False
+                finally:
+                    try:
+                        conn.disconnect()
+                    except:
+                        pass
+                return True
             except Exception:
                 return False
-            finally:
-                try:
-                    conn.disconnect()
-                except:
-                    pass
-            return True
-        except Exception:
+        except Exception as e:
+            print("DEBUG: Exception in card_present:", e)
             return False
 
     def _connect_reader(self):

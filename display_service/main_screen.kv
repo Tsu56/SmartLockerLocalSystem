@@ -8,7 +8,7 @@
     md_bg_color: get_color_from_hex("#e5f2f9ff")
     
     # ใช้ on_release เพื่อเรียกฟังก์ชันใน main.py และส่งชื่อหน้าจอที่ต้องการไป
-    on_release: app.select_login_method(root.target_screen)
+    on_release: app.change_screen(root.target_screen)
     
     target_screen: "" # ชื่อหน้าจอเป้าหมาย
     icon_name: ""
