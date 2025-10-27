@@ -1,3 +1,5 @@
 .dockerignore
 Dockerfile
 database/
+__pycache__/
+device_identity_service_venv/

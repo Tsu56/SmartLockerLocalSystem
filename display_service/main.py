@@ -114,7 +114,7 @@ class SmartLockerApp(MDApp):
             self.get_data = True
 
             Clock.schedule_once(lambda dt: self.update_ui_card_status(is_present=True, status_text="Card read successfully!"), 0)
-            print("Welcome,", data["firstname"], data["lastname"])
+            print("Welcome,", data["citizenID"], data["firstname"], data["lastname"])
 
             # TODO: นำข้อมูล ddata ไปใช้ในการล็อกอิน
             # self.do_login(data)

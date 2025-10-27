@@ -1,3 +1,4 @@
 /display_service/display_service_venv/
+/device_identity_service/device_identity_service_venv/
 .env
 __pycache__/
