@@ -2,13 +2,13 @@ import serial
 import time
 import threading
 
-PORT = "COM3"  # เปลี่ยนตามเครื่องของคุณ
+PORT = "/dev/ttyUSB0"  # เปลี่ยนตามเครื่องของคุณ
 BAUDRATE = 38400
 
 ser = serial.Serial(PORT, BAUDRATE, timeout=1)
 time.sleep(2)
 
-device_addresses = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6']
+device_addresses = ['S1', 'S2']
 running = True  # flag สำหรับหยุดลูป
 
 def auto_loop():
@@ -19,17 +19,26 @@ def auto_loop():
             if not running:
                 break
             command = f"{addr}:GETDATA"
+            ser.reset_input_buffer()
             ser.write((command + "\n").encode())
             ser.flush()
             print(f"[AUTO] Send: {command}")
 
             time.sleep(0.1)  # เว้นช่วงเล็กน้อย
 
-            response = ser.readline().decode(errors="ignore").strip()
-            if response:
-                print(f"[AUTO] Arduino replied: {response}")
-            else:
-                print("[AUTO] (no response)")
+            responsed = False
+            start_time = time.time()
+            timeout = 2
+
+            while not responsed and time.time() - start_time < timeout:
+                response = ser.readline().decode(errors="ignore").strip()
+                if response:
+                    print(f"[AUTO] Arduino replied: {response}")
+                    responsed = True
+                else: time.sleep(0.5)
+            
+            if not responsed:
+                print(f"[AUTO] No response from {addr} within {timeout}s")
 
         time.sleep(2)  # เว้นระยะก่อนลูปใหม่ (ปรับได้ตามต้องการ)
 

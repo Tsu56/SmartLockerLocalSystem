@@ -1,5 +1,6 @@
 from smartcard.System import readers
-from smartcard.Exceptions import NoCardException
+from smartcard.scard import *
+import smartcard.scard as scard
 import time
 import threading
 
@@ -13,50 +14,48 @@ class ThaiSmartCardReader:
     def __init__(self):
         self.connection = None
         self.reader = None
+        self._last_state = False
 
     def card_present(self):
         try:
-            r = readers()
-            print("DEBUG: Readers list:", r)
-            if not r:
-                print("DEBUG: No readers found.")
+            hresult, hcontext = SCardEstablishContext(SCARD_SCOPE_USER)
+            if hresult != SCARD_S_SUCCESS:
                 return False
-            reader = r[0]
-            try:
-                conn = reader.createConnection()
-                try:
-                    conn.connect()  # จะ fail ถ้า card unpowered
-                    print("DEBUG: Card connected successfully.")
-                except NoCardException:
-                    print("DEBUG: No card inserted.")
-                    return False
-                except Exception as e:
-                    print("DEBUG: Other connect error:", e)
-                    return False
-                finally:
-                    try:
-                        conn.disconnect()
-                    except:
-                        pass
-                return True
-            except Exception:
+
+            hresult, readers_list = SCardListReaders(hcontext, [])
+            if hresult != SCARD_S_SUCCESS or len(readers_list) == 0:
                 return False
+
+            reader_name = readers_list[0]
+
+            hresult, reader_name, state, protocol, atr = SCardStatus(
+                SCardConnect(hcontext, reader_name, SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1)[1]
+            )
+
+            is_present = len(atr) > 0
+            return is_present
+            
         except Exception as e:
             print("DEBUG: Exception in card_present:", e)
             return False
 
     def _connect_reader(self):
+        if self.connection:
+            print("DEBUG: Already connected.")
+            return
+        
         r = readers()
         if not r:
             raise Exception("No smart card reader found")
         self.reader = r[0]
         self.connection = self.reader.createConnection()
-        self.connection.connect()
+        self.connection.connect(protocol=SCARD_PROTOCOL_T0)
         
+        time.sleep(0.2)
         data, sw1, sw2 = self.connection.transmit(self.SELECT_CMD)
         
         # Handle SW1=0x61 (more data available)
-        while sw1 == 0x61:
+        if sw1 == 0x61:
             data2, sw1, sw2 = self.connection.transmit([0x00, 0xC0, 0x00, 0x00, sw2])
             data.extend(data2)
         

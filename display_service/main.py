@@ -9,6 +9,8 @@ from kivymd.uix.textfield import MDTextField
 from kivy.clock import Clock
 import threading
 
+read_lock = threading.Lock()
+
 try:
     from authentication.smartcardreader import ThaiSmartCardReader
 except ImportError:
@@ -89,10 +91,7 @@ class SmartLockerApp(MDApp):
             return
         
         if card_now_present and not self.card_present_status:
-            self.card_present_status = True
-            if not self.is_reading_card:
-                self.is_reading_card = True
-                threading.Thread(target=self.read_card_thread, daemon=True).start()
+            Clock.schedule_once(lambda dt: self.start_reading_if_still_present(), 0.5)
         
         elif not card_now_present and self.card_present_status:
             self.card_present_status = False
@@ -106,33 +105,39 @@ class SmartLockerApp(MDApp):
         if not self.is_reading_card:
             self.update_ui_card_status(is_present=self.card_present_status)
     
+    def start_reading_if_still_present(self):
+        if self.reader.card_present() and not self.is_reading_card:
+            self.is_reading_card = True
+            threading.Thread(target=self.read_card_thread, daemon=True).start()
+
     def read_card_thread(self):
-        Clock.schedule_once(lambda dt: self.update_ui_card_status(is_present=True, status_text="Reading card..."), 0)
-        try:
-            self.reader._connect_reader()
-            data = self.reader.read_all()
-            self.get_data = True
-
-            Clock.schedule_once(lambda dt: self.update_ui_card_status(is_present=True, status_text="Card read successfully!"), 0)
-            print("Welcome,", data["citizenID"], data["firstname"], data["lastname"])
-
-            # TODO: นำข้อมูล ddata ไปใช้ในการล็อกอิน
-            # self.do_login(data)
-
-            # เปลี่ยนหน้าจอหลังจากแสดงผลสำเร็จ (ตัวอย่าง: กลับไปหน้าหลัก)
-            # ต้องใช้ Clock.schedule_once เพื่อเปลี่ยน UI ใน Main Thread
-            Clock.schedule_once(lambda dt: self.change_screen("main_screen"), 2)
-        except Exception as e:
-            self.get_data = False
-            Clock.schedule_once(lambda dt, exc=e: self.update_ui_card_status(is_present=True, status_text="Error reading card.", error=True), 0)
-            print(f"Error reading card: {str(e)}")
-        finally:
+        with read_lock:
+            Clock.schedule_once(lambda dt: self.update_ui_card_status(is_present=True, status_text="Reading card..."), 0)
             try:
-                if getattr(self.reader, 'connection', None):
-                    self.reader.disconnect()
+                self.reader._connect_reader()
+                data = self.reader.read_all()
+                self.get_data = True
+
+                Clock.schedule_once(lambda dt: self.update_ui_card_status(is_present=True, status_text="Card read successfully!"), 0)
+                print("Welcome,", data["citizenID"], data["firstname"], data["lastname"])
+
+                # TODO: นำข้อมูล ddata ไปใช้ในการล็อกอิน
+                # self.do_login(data)
+
+                # เปลี่ยนหน้าจอหลังจากแสดงผลสำเร็จ (ตัวอย่าง: กลับไปหน้าหลัก)
+                # ต้องใช้ Clock.schedule_once เพื่อเปลี่ยน UI ใน Main Thread
+                Clock.schedule_once(lambda dt: self.change_screen("main_screen"), 2)
             except Exception as e:
-                print(f"Warning: failed to disconnect reader in thread: {e}")
-            self.is_reading_card = False
+                self.get_data = False
+                Clock.schedule_once(lambda dt, exc=e: self.update_ui_card_status(is_present=True, status_text="Error reading card.", error=True), 0)
+                print(f"Error reading card: {str(e)}")
+            finally:
+                try:
+                    if getattr(self.reader, 'connection', None):
+                        self.reader.disconnect()
+                except Exception as e:
+                    print(f"Warning: failed to disconnect reader in thread: {e}")
+                self.is_reading_card = False
     
     def update_ui_card_status(self, is_present, status_text=None, error=False):
         def update(dt):
