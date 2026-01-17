@@ -6,24 +6,7 @@ from kivy.properties import StringProperty
 from kivy.core.window import Window
 from kivymd.uix.button import MDRaisedButton, MDTextButton
 from kivymd.uix.textfield import MDTextField
-from kivy.clock import Clock
-import threading
-
-read_lock = threading.Lock()
-
-try:
-    from authentication.smartcardreader import ThaiSmartCardReader
-except ImportError:
-    class ThaiSmartCardReader:
-        def __init__(self): pass
-        def card_present(self): return False
-        def read_all(self): return {
-            "citizenID": "1234567890123",
-            "firstname": "John",
-            "lastname": "Doe"
-            }
-        def disconnect(self): pass
-    print("Warning: authentication module not found. Using mock ThaiSmartCardReader.")
+from controller.id_card_controller import IDCardController, Clock
 
 Window.size = (1024, 600)
 
@@ -56,7 +39,11 @@ class SmartLockerApp(MDApp):
     def build(self):
         self.theme_cls.theme_style = "Light"
         self.theme_cls.primary_palette = "Blue"
-        self.reader = ThaiSmartCardReader()
+
+        self.id_card_controller = IDCardController(
+            on_data_callback=self.handle_card_data,
+            on_status_callback=self.update_ui_card_status
+        )
 
         for file in KV_FILES:
             if os.path.exists(file):
@@ -68,76 +55,17 @@ class SmartLockerApp(MDApp):
         return screen
     
     def on_start(self):
-        print("App started.")
-        try:
-            print("Initializing card reader...")
-            print(self.card_present_status)
-            Clock.schedule_interval(self.check_card_status, 0.5)
-        except Exception as e:
-            print(f"Error initializing card reader: {str(e)}")
+        Clock.schedule_interval(self._poll_card_reader, 0.5)
 
-    def check_card_status(self, dt):
-        if self.current_screen_name != "id_card_login":
-            return
-        if self.get_data:
-            return
-        try:
-            card_now_present = self.reader.card_present()
-        except Exception as e:
-            self.card_present_status = False
-            self.is_reading_card = False
-            self.update_ui_card_status(is_present=False, error=True)
-            self.show_toast(f"Reader error: {str(e)}")
-            return
-        
-        if card_now_present and not self.card_present_status:
-            Clock.schedule_once(lambda dt: self.start_reading_if_still_present(), 0.5)
-        
-        elif not card_now_present and self.card_present_status:
-            self.card_present_status = False
-            self.is_reading_card = False
-            try:
-                if getattr(self.reader, 'connection', None):
-                    self.reader.disconnect()
-            except Exception as e:
-                print(f"Warning: failed to disconnect reader: {e}")
-        
-        if not self.is_reading_card:
-            self.update_ui_card_status(is_present=self.card_present_status)
-    
-    def start_reading_if_still_present(self):
-        if self.reader.card_present() and not self.is_reading_card:
-            self.is_reading_card = True
-            threading.Thread(target=self.read_card_thread, daemon=True).start()
+    def _poll_card_reader(self, dt):
+        if self.current_screen_name == "id_card_login":
+            self.id_card_controller.check_status()
 
-    def read_card_thread(self):
-        with read_lock:
-            Clock.schedule_once(lambda dt: self.update_ui_card_status(is_present=True, status_text="Reading card..."), 0)
-            try:
-                self.reader._connect_reader()
-                data = self.reader.read_all()
-                self.get_data = True
-
-                Clock.schedule_once(lambda dt: self.update_ui_card_status(is_present=True, status_text="Card read successfully!"), 0)
-                print("Welcome,", data["citizenID"], data["firstname"], data["lastname"])
-
-                # TODO: นำข้อมูล ddata ไปใช้ในการล็อกอิน
-                # self.do_login(data)
-
-                # เปลี่ยนหน้าจอหลังจากแสดงผลสำเร็จ (ตัวอย่าง: กลับไปหน้าหลัก)
-                # ต้องใช้ Clock.schedule_once เพื่อเปลี่ยน UI ใน Main Thread
-                Clock.schedule_once(lambda dt: self.change_screen("main_screen"), 2)
-            except Exception as e:
-                self.get_data = False
-                Clock.schedule_once(lambda dt, exc=e: self.update_ui_card_status(is_present=True, status_text="Error reading card.", error=True), 0)
-                print(f"Error reading card: {str(e)}")
-            finally:
-                try:
-                    if getattr(self.reader, 'connection', None):
-                        self.reader.disconnect()
-                except Exception as e:
-                    print(f"Warning: failed to disconnect reader in thread: {e}")
-                self.is_reading_card = False
+    def handle_card_data(self, data):
+        """จัดการข้อมูลที่ได้จากบัตร"""
+        print(f"Welcome {data['firstname']}")
+        self.update_ui_card_status(is_present=True, status_text="Success!")
+        Clock.schedule_once(lambda dt: self.change_screen("main_screen"), 2)
     
     def update_ui_card_status(self, is_present, status_text=None, error=False):
         def update(dt):

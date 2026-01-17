@@ -1,6 +1,5 @@
 from smartcard.System import readers
 from smartcard.scard import *
-import smartcard.scard as scard
 import time
 import threading
 
@@ -17,31 +16,48 @@ class ThaiSmartCardReader:
         self._last_state = False
 
     def card_present(self):
+        hcontext = None
+        hcard = None
         try:
+            # 1. สร้าง Context
             hresult, hcontext = SCardEstablishContext(SCARD_SCOPE_USER)
             if hresult != SCARD_S_SUCCESS:
                 return False
 
+            # 2. หา Reader
             hresult, readers_list = SCardListReaders(hcontext, [])
             if hresult != SCARD_S_SUCCESS or len(readers_list) == 0:
+                SCardReleaseContext(hcontext) # ต้องคืน context ทันที
                 return False
 
             reader_name = readers_list[0]
 
-            hresult, reader_name, state, protocol, atr = SCardStatus(
-                SCardConnect(hcontext, reader_name, SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1)[1]
-            )
+            # 3. ลองเชื่อมต่อแบบ SHARED เพื่อเช็คสถานะ
+            # เพิ่มการดักจับผลลัพธ์ของ SCardConnect ก่อนส่งเข้า SCardStatus
+            hresult, hcard, protocol = SCardConnect(hcontext, reader_name, SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1)
+            
+            if hresult != SCARD_S_SUCCESS:
+                SCardReleaseContext(hcontext)
+                return False
 
-            is_present = len(atr) > 0
+            # 4. เช็คสถานะและ ATR
+            hresult, reader_name, state, protocol, atr = SCardStatus(hcard)
+            is_present = (hresult == SCARD_S_SUCCESS and len(atr) > 0)
+
             return is_present
             
         except Exception as e:
-            print("DEBUG: Exception in card_present:", e)
+            # ไม่ต้อง print เยอะเพื่อลดความหน่วงใน Main Thread
             return False
+        finally:
+            # [จุดสำคัญที่สุด] ต้องล้างทุอย่างทิ้งเพื่อให้ Reader ว่างสำหรับ Thread อ่านบัตร
+            if hcard:
+                SCardDisconnect(hcard, SCARD_LEAVE_CARD)
+            if hcontext:
+                SCardReleaseContext(hcontext)
 
     def _connect_reader(self):
         if self.connection:
-            print("DEBUG: Already connected.")
             return
         
         r = readers()
@@ -49,12 +65,13 @@ class ThaiSmartCardReader:
             raise Exception("No smart card reader found")
         self.reader = r[0]
         self.connection = self.reader.createConnection()
-        self.connection.connect(protocol=SCARD_PROTOCOL_T0)
+        
+        # [FIX 1] ใช้ Shared Mode และรองรับทั้ง T0/T1 เพื่อป้องกันการแย่ง Resource แล้วค้าง
+        self.connection.connect(mode=SCARD_SHARE_SHARED, protocol=SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1)
         
         time.sleep(0.2)
         data, sw1, sw2 = self.connection.transmit(self.SELECT_CMD)
         
-        # Handle SW1=0x61 (more data available)
         if sw1 == 0x61:
             data2, sw1, sw2 = self.connection.transmit([0x00, 0xC0, 0x00, 0x00, sw2])
             data.extend(data2)
@@ -63,24 +80,53 @@ class ThaiSmartCardReader:
             raise Exception(f"Failed to select application: SW1={sw1}, SW2={sw2}")
 
     def _send_apdu(self, apdu):
-        data, sw1, sw2 = self.connection.transmit(apdu)
-        if sw1 == 0x61:
-            data2, sw1, sw2 = self.connection.transmit([0x00, 0xC0, 0x00, 0x00, sw2])
-            data.extend(data2)
-        return bytearray(data).decode("tis-620", errors="ignore").strip()
+        try:
+            data, sw1, sw2 = self.connection.transmit(apdu)
+            if sw1 == 0x61:
+                data2, sw1, sw2 = self.connection.transmit([0x00, 0xC0, 0x00, 0x00, sw2])
+                data.extend(data2)
+            
+            if not data: return ""
+            return bytearray(data).decode("tis-620", errors="ignore").strip().replace('\x00', '')
+        except Exception as e:
+            print(f"DEBUG: APDU Transmission Error: {e}")
+            return ""
 
     def read_all(self):
-        cid = self._send_apdu(self.CMD_CID)
-        fullname = self._send_apdu(self.CMD_NAME)
-        birth = self._send_apdu(self.CMD_BIRTH)
-        sex = self._send_apdu(self.CMD_SEX)
-        return {
-            "citizenID": cid,
-            "firstname": fullname.split("#")[1] if "#" in fullname else fullname,
-            "lastname": fullname.split("#")[-1] if "#" in fullname else fullname,
-            "birthdate": f"{int(birth[:4])-543}-{birth[4:6]}-{birth[6:8]}",
-            "sex": "Male" if sex == "1" else "Female"
-        }
+        data = {}
+        try:
+            time.sleep(0.1)
+            print("DEBUG: Reading CID...")
+            data["citizenID"] = self._send_apdu(self.CMD_CID)
+            time.sleep(0.05)
+            
+            print("DEBUG: Reading Name...")
+            fullname = self._send_apdu(self.CMD_NAME)
+            
+            if fullname:
+                parts = fullname.split("#")
+                data["firstname"] = parts[1] if len(parts) > 1 else fullname
+                data["lastname"] = parts[-1] if len(parts) > 1 else fullname
+            else:
+                data["firstname"] = data["lastname"] = "Unknown"
+
+            print("DEBUG: Reading Birth...")
+            birth = self._send_apdu(self.CMD_BIRTH)
+            if birth and len(birth) >= 8:
+                data["birthdate"] = f"{int(birth[:4])-543}-{birth[4:6]}-{birth[6:8]}"
+            else:
+                data["birthdate"] = ""
+
+            print("DEBUG: Reading Sex...")
+            sex = self._send_apdu(self.CMD_SEX)
+            data["sex"] = "Male" if sex == "1" else "Female"
+
+            print("DEBUG: Read all completed.")
+            return data
+
+        except Exception as e:
+            print(f"DEBUG: Error inside read_all: {e}")
+            raise e
 
     def disconnect(self):
         if self.connection:
