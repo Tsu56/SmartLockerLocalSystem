@@ -13,6 +13,7 @@ Window.size = (1024, 600)
 KV_FILES = [
     "screen/main_screen.kv",
     "screen/id_card_login.kv",
+    "screen/rfid_staff_tag.kv",
     "screen/qr_scan_screen.kv",
     "screen/user_pass_login.kv"
 ]
@@ -22,6 +23,7 @@ MDScreenManager:
     id: screen_manager
     MainScreen:
     IDCardLoginScreen:
+    RFIDLoginScreen:
     QRScanScreen:
     UserPassLoginScreen:
 """

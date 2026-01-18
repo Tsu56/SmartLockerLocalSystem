@@ -1,0 +1,15 @@
+#: import get_color_from_hex kivy.utils.get_color_from_hex
+#: set LIGHT_BG get_color_from_hex("#F7F8FC")
+#: set RED_COLOR get_color_from_hex("#E74C3C")
+
+<RFIDLoginScreen@MDScreen>:
+    name: "rfid_staff_tag"
+    md_bg_color: LIGHT_BG
+
+    MDRectangleFlatButton:
+        text: "CANCEL"
+        pos_hint: {'center_x': 0.5, 'center_y': 0.1}
+        line_color: RED_COLOR
+        theme_text_color: "Custom"
+        text_color: RED_COLOR
+        on_release: app.go_back()
