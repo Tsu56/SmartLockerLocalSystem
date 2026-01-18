@@ -1,9 +1,7 @@
 #: import get_color_from_hex kivy.utils.get_color_from_hex
 #: set LIGHT_BG get_color_from_hex("#F7F8FC")
 #: set DARK_BLUE get_color_from_hex("#34495E")
-#: set STATUS_READY_COLOR get_color_from_hex("#E0E0E0")
-#: set STATUS_SUCCESS_COLOR get_color_from_hex("#2ECC71")
-#: set STATUS_ERROR_COLOR get_color_from_hex("#E74C3C")
+#: set RED_COLOR get_color_from_hex("#E74C3C")
 
 <IDCardLoginScreen@MDScreen>:
     name: "id_card_login"
@@ -16,8 +14,8 @@
         size: "200dp", "320dp" # กำหนดขนาดของการ์ด
         pos_hint: {'center_x': 0.5, 'center_y': 0.5}
         md_bg_color: get_color_from_hex("#FFFFFF")
-        line_width: 1
-        line_color: STATUS_READY_COLOR
+        line_width: app.card_border_width
+        line_color: app.card_border_color
 
         MDBoxLayout:
             orientation: 'vertical'
@@ -47,7 +45,7 @@
             # 3. สถานะ (Status) ที่ด้านล่างสุด
             MDLabel:
                 id: status_label
-                text: "Status: Ready"
+                text: app.card_status_text
                 halign: "center"
                 font_style: "Caption"
                 theme_text_color: "Secondary"
@@ -58,7 +56,7 @@
     MDRectangleFlatButton:
         text: "CANCEL"
         pos_hint: {'center_x': 0.5, 'center_y': 0.1}
-        line_color: STATUS_ERROR_COLOR
+        line_color: RED_COLOR
         theme_text_color: "Custom"
-        text_color: STATUS_ERROR_COLOR
+        text_color: RED_COLOR
         on_release: app.go_back()
