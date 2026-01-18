@@ -1,61 +1,89 @@
 #: import get_color_from_hex kivy.utils.get_color_from_hex
 #: set LIGHT_BG get_color_from_hex("#F7F8FC")
 #: set DARK_BLUE get_color_from_hex("#34495E")
+#: set RED_COLOR get_color_from_hex("#E74C3C")
 
 <UserPassLoginScreen@MDScreen>:
     name: "user_pass_login"
     md_bg_color: LIGHT_BG
-    
-    MDBoxLayout:
-        orientation: 'vertical'
-        padding: "30dp"
-        spacing: "30dp"
-        
-        MDTopAppBar:
-            title: "Username / Password Login"
-            left_action_items: [["arrow-left", lambda x: app.go_back()]]
-            md_bg_color: app.theme_cls.primary_color
-            elevation: 4
-            
-        MDLabel:
-            text: "Enter your credentials to proceed."
-            halign: "center"
-            font_style: "H6"
-            theme_text_color: "Custom"
-            text_color: DARK_BLUE
-            size_hint_y: None
-            height: "50dp"
 
+    MDCard:
+        size_hint: None, None
+        size: "360dp", "400dp"
+        pos_hint: {"center_x": 0.5, "center_y": 0.5}
+        elevation: 2
+        padding: ["24dp", "12dp", "24dp", "24dp"] # [ซ้าย, บน, ขวา, ล่าง] ลดช่องว่างบนลง
+        radius: [15, ]
+        
+        # ใช้ BoxLayout จัดระเบียบภายใน Card จากบนลงล่าง
         MDBoxLayout:
-            orientation: 'vertical'
-            size_hint: 0.7, None
-            height: "250dp"
-            pos_hint: {"center_x": 0.5, "center_y": 0.5}
-            spacing: "30dp"
-            
-            MDTextField:
-                id: username_field
-                hint_text: "Username"
-                helper_text: "Enter your hospital network username"
-                icon_left: "account"
-                mode: "rectangle"
-                
-            MDTextField:
-                id: password_field
-                hint_text: "Password"
-                helper_text: "Enter your password"
-                icon_left: "lock"
-                mode: "rectangle"
-                password: True
-                
-            MDRaisedButton:
-                text: "LOG IN"
-                size_hint_x: 0.8
-                pos_hint: {"center_x": 0.5}
-                on_release: app.show_toast(f"Attempting login for: {username_field.text}")
-                
-            MDTextButton:
-                text: "Forgot Password?"
-                size_hint_x: 0.8
-                pos_hint: {"center_x": 0.5}
-                on_release: app.show_toast("Redirecting to password recovery.")
+            orientation: "vertical"
+            spacing: "12dp"
+
+            MDLabel:
+                text: "Account Login"
+                font_style: "H5"
+                halign: "center"
+                theme_text_color: "Custom"
+                text_color: DARK_BLUE
+                bold: True
+                size_hint_y: None
+                height: "60dp"
+
+            # ส่วนกรอกข้อมูล
+            MDBoxLayout:
+                orientation: "vertical"
+                spacing: "20dp"
+                adaptive_height: True
+
+                MDTextField:
+                    id: username_field
+                    hint_text: "Username"
+                    mode: "rectangle"
+                    icon_right: "account"
+                    size_hint_y: None
+                    height: "48dp"
+
+                MDRelativeLayout:
+                    size_hint_y: None
+                    height: "48dp"
+                    
+                    MDTextField:
+                        id: password_field
+                        hint_text: "Password"
+                        mode: "rectangle"
+                        password: True
+                        size_hint_y: None
+                        height: "48dp"
+                        pos_hint: {"center_x": .5, "center_y": .5}
+
+                    MDIconButton:
+                        icon: "eye-off"
+                        pos_hint: {"center_y": .5, "right": 1}
+                        on_release:
+                            password_field.password = not password_field.password
+                            self.icon = "eye" if self.icon == "eye-off" else "eye-off"
+
+            # Spacer ดันปุ่มลงข้างล่าง
+            Widget:
+
+            # ส่วนของปุ่ม
+            MDBoxLayout:
+                orientation: "vertical"
+                spacing: "12dp"
+                adaptive_height: True
+
+                MDRaisedButton:
+                    text: "LOGIN"
+                    size_hint_x: 1
+                    height: "48dp"
+                    font_size: "18sp"
+                    on_release: app.process_login(username_field.text, password_field.text)
+
+                MDRectangleFlatButton:
+                    text: "CANCEL"
+                    size_hint_x: 1
+                    line_color: RED_COLOR
+                    theme_text_color: "Custom"
+                    text_color: RED_COLOR
+                    on_release: app.go_back()

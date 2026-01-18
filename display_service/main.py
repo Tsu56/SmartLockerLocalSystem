@@ -90,6 +90,13 @@ class SmartLockerApp(MDApp):
             self.card_border_width = 4
             self.card_status_color = self.status_error_color
             self.card_status_text = error_msg
+
+    def process_login(self, username, password):
+        if not username.strip() or not password.strip():
+            self.show_toast("Please enter both username and password")
+            return
+            
+        print(f"DEBUG: Attempting login - Username: {username}")
     
     def change_screen(self, screen_name):
         self.root.current = screen_name
