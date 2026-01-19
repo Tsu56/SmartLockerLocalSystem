@@ -7,6 +7,8 @@ from kivy.core.window import Window
 from kivymd.uix.button import MDRaisedButton, MDTextButton
 from kivymd.uix.textfield import MDTextField
 from controller.id_card_controller import IDCardController, Clock
+import json
+from kivy.network.urlrequest import UrlRequest
 
 Window.size = (1024, 600)
 
@@ -68,8 +70,25 @@ class SmartLockerApp(MDApp):
 
     def handle_card_data(self, instance, value):
         """จัดการข้อมูลที่ได้จากบัตร"""
-        print(f"Welcome {value.get('firstname')}")
-        Clock.schedule_once(lambda dt: self.change_screen("main_screen"), 2)
+        citizen_id = value.get('citizenID')
+        if not citizen_id:
+            return
+        
+        payload = json.dumps({
+            "citizen_id": str(citizen_id).strip()
+        })
+
+        headers = {'Content-type': 'application/json', 'Accept': 'application/json'}
+        
+        UrlRequest(
+            "http://localhost:5000/auth/login/smartcard",
+            req_body=payload,
+            req_headers=headers,
+            on_success=self._on_login_success,
+            on_failure=self._on_login_failed,
+            on_error=self._on_login_error,
+            method='POST'
+        )
     
     def _sync_card_ui(self, instance, is_present):
         if is_present:
@@ -92,11 +111,75 @@ class SmartLockerApp(MDApp):
             self.card_status_text = error_msg
 
     def process_login(self, username, password):
+        # 1. ตรวจสอบค่าว่างเบื้องต้นก่อนส่ง
         if not username.strip() or not password.strip():
             self.show_toast("Please enter both username and password")
             return
             
-        print(f"DEBUG: Attempting login - Username: {username}")
+        print(f"DEBUG: Connecting to Docker API for user: {username}")
+        
+        # 2. เตรียมข้อมูลในรูปแบบ JSON
+        payload = json.dumps({
+            "username": username.strip(),
+            "password": password.strip()
+        })
+        
+        # 3. ส่ง Request ไปที่ Docker Container
+        # headers สำคัญมากเพื่อให้ FastAPI รู้ว่าเป็นข้อมูล JSON
+        headers = {'Content-type': 'application/json', 'Accept': 'application/json'}
+        
+        UrlRequest(
+            "http://localhost:5000/auth/login/password",
+            req_body=payload,
+            req_headers=headers,
+            on_success=self._on_login_success,
+            on_failure=self._on_login_failed,
+            on_error=self._on_login_error,
+            method='POST'
+        )
+
+    def _on_login_success(self, request, result):
+        """กรณี Login สำเร็จ (HTTP 200)"""
+        print(f"DEBUG: Raw Success Result: {result}")
+
+        # ตรวจสอบโครงสร้างข้อมูล (รองรับทั้งแบบมีคีย์ 'user' ครอบ และแบบส่ง object มาตรงๆ)
+        if isinstance(result, dict):
+            # ถ้ามีคีย์ 'user' ให้ดึงมา ถ้าไม่มีให้ถือว่า result คือข้อมูล user เลย
+            user_data = result.get("user") if "user" in result else result
+            
+            # ดึงชื่อแสดงผล โดยลองจาก full_name -> username -> ค่าเริ่มต้น "User"
+            # ใช้ .get() และตรวจสอบว่าเป็น None หรือไม่
+            full_name = user_data.get("full_name") or user_data.get("username") or "User"
+            username = user_data.get("username", "Unknown")
+            
+            self.show_toast(f"Welcome, {full_name}!")
+            print(f"DEBUG: Login Success for {username}")
+        else:
+            # กรณี result ไม่ใช่ dict (เช่น เป็น string)
+            self.show_toast("Welcome!")
+            print(f"DEBUG: Login Success but result is not a dictionary")
+        
+        # เปลี่ยนหน้าไปยังหน้าหลักของระบบหลังจากแสดง Toast 1 วินาที
+        Clock.schedule_once(lambda dt: self.change_screen("main_screen"), 1)
+
+    def _on_login_failed(self, request, result):
+        """กรณีข้อมูลไม่ถูกต้อง (เช่น HTTP 401)"""
+        # 1. ตรวจสอบว่า result เป็น Dictionary หรือไม่
+        if isinstance(result, dict):
+            # ถ้าเป็น Dict ให้ดึงค่าจาก key "detail"
+            error_msg = result.get("detail", "Authentication failed")
+        else:
+            # 2. ถ้าเป็น String หรืออย่างอื่น ให้แปลงเป็น string และใช้งานโดยตรง
+            # (บางครั้ง FastAPI อาจจะส่งแค่ string สั้นๆ มาให้)
+            error_msg = str(result) if result else "Authentication failed"
+
+        self.show_toast(error_msg)
+        print(f"DEBUG: Login Failed - {error_msg}")
+
+    def _on_login_error(self, request, error):
+        """กรณีเชื่อมต่อ Server ไม่ได้ (Docker ไม่รัน หรือ Network มีปัญหา)"""
+        self.show_toast("Network Error: Cannot connect to Auth Service")
+        print(f"DEBUG: Connection Error - {error}")
     
     def change_screen(self, screen_name):
         self.root.current = screen_name

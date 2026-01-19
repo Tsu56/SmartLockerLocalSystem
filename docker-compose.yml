@@ -1,0 +1,30 @@
+services:
+  # Service สำหรับระบบยืนยันตัวตน
+  local-auth-service:
+    # ระบุตำแหน่งโฟลเดอร์ที่มี Dockerfile อยู่
+    build: 
+      context: ./local_auth_service
+      dockerfile: Dockerfile
+    container_name: local_auth_service
+    ports:
+      - "5000:5000"
+    volumes:
+      # เชื่อมโค้ดจากโฟลเดอร์ย่อยเข้ากับ Container
+      - ./local_auth_service:/local_auth_service
+      # เชื่อมฐานข้อมูลให้อยู่ในโฟลเดอร์ database ของ Service นั้นๆ
+      - ./local_auth_service/database:/local_auth_service/database
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+    restart: always
+    networks:
+      - smart-locker-network
+
+  # ตัวอย่าง: หากในอนาคตคุณเพิ่ม Service อื่นๆ
+  # locker-controller:
+  #   build: ./locker_controller_service
+  #   ... (ตั้งค่าอื่นๆ) ...
+
+networks:
+  smart-locker-network:
+    driver: bridge

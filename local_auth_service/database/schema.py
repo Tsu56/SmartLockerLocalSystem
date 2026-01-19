@@ -40,6 +40,9 @@ class SmartCardPublic(SmartCardBase):
     user_id: int
     registered_at: datetime
 
+class SmartCardLogin(SQLModel):
+    citizen_id: str = Field(description="เลขบัตรประชาชน 13 หลักที่อ่านได้จากเครื่อง")
+
 # --- Auth Log Schemas (Optional: เก็บประวัติการเข้าใช้งาน) ---
 class AuthLogBase(SQLModel):
     user_id: int | None = None

@@ -1,0 +1,5 @@
+.dockerignore
+Dockerfile
+__pycache__/
+local_auth_service_venv/
+database/
