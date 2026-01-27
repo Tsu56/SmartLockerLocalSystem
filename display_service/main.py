@@ -17,7 +17,8 @@ KV_FILES = [
     "screen/id_card_login.kv",
     "screen/rfid_staff_tag.kv",
     "screen/qr_scan_screen.kv",
-    "screen/user_pass_login.kv"
+    "screen/user_pass_login.kv",
+    "screen/home_screen.kv"
 ]
 
 screen_helper = """
@@ -28,6 +29,7 @@ MDScreenManager:
     RFIDLoginScreen:
     QRScanScreen:
     UserPassLoginScreen:
+    HomeScreen:
 """
 
 class SmartLockerApp(MDApp):
@@ -160,7 +162,7 @@ class SmartLockerApp(MDApp):
             print(f"DEBUG: Login Success but result is not a dictionary")
         
         # เปลี่ยนหน้าไปยังหน้าหลักของระบบหลังจากแสดง Toast 1 วินาที
-        Clock.schedule_once(lambda dt: self.change_screen("main_screen"), 1)
+        Clock.schedule_once(lambda dt: self.change_screen("home_screen"), 1)
 
     def _on_login_failed(self, request, result):
         """กรณีข้อมูลไม่ถูกต้อง (เช่น HTTP 401)"""
@@ -180,6 +182,24 @@ class SmartLockerApp(MDApp):
         """กรณีเชื่อมต่อ Server ไม่ได้ (Docker ไม่รัน หรือ Network มีปัญหา)"""
         self.show_toast("Network Error: Cannot connect to Auth Service")
         print(f"DEBUG: Connection Error - {error}")
+
+    def go_to_dispense(self):
+        print("Navigating to Dispense Mode")
+        # เตรียม Logic สำหรับเปลี่ยนหน้าไปหน้าเบิกของ
+        # self.change_screen("dispense_screen") 
+        self.show_toast("เข้าสู่โหมดเบิกอุปกรณ์")
+
+    def go_to_restock(self):
+        print("Navigating to Restock Mode")
+        # เตรียม Logic สำหรับเปลี่ยนหน้าไปหน้าเติมของ
+        # self.change_screen("restock_screen")
+        self.show_toast("เข้าสู่โหมดเติมอุปกรณ์")
+
+    def logout(self):
+        print("Logging out...")
+        # เคลียร์ค่าต่างๆ ถ้าจำเป็น
+        self.change_screen("main_screen")
+        self.show_toast("ออกจากระบบเรียบร้อยแล้ว")
     
     def change_screen(self, screen_name):
         self.root.current = screen_name

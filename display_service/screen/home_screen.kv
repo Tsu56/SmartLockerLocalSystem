@@ -1,0 +1,164 @@
+#: import get_color_from_hex kivy.utils.get_color_from_hex
+# กำหนดชุดสีที่ใช้ (Color Palette)
+#: set LIGHT_BG get_color_from_hex("#F7F8FC")
+#: set DISPENSE_COLOR get_color_from_hex("#3498DB")  # สีฟ้า
+#: set RESTOCK_COLOR get_color_from_hex("#27AE60")   # สีเขียว
+#: set TEXT_COLOR get_color_from_hex("#2C3E50")
+
+<HomeScreen@MDScreen>:
+    name: "home_screen"
+    md_bg_color: LIGHT_BG
+
+    MDBoxLayout:
+        orientation: 'vertical'
+        padding: "24dp"
+        spacing: "20dp"
+
+        # ส่วนหัว (Header)
+        MDBoxLayout:
+            adaptive_height: True
+            orientation: 'vertical'
+            padding: [0, "10dp", 0, "10dp"]
+
+            MDLabel:
+                text: "Please select an action to proceed"
+                font_style: "H5"
+                halign: "center"
+                theme_text_color: "Primary"
+
+        # ส่วนปุ่มกดหลัก (Main Action Buttons)
+        MDBoxLayout:
+            orientation: 'horizontal'
+            spacing: "24dp"
+            padding: "10dp"
+            size_hint_y: 0.2  # ปรับความสูงเป็น 20% ของพื้นที่แม่
+            size_hint_x: 0.8  # ปรับความกว้างเป็น 80% (ถ้าต้องการ)
+            pos_hint: {"center_x": .5}
+            
+
+            MDBoxLayout:
+                orientation: 'horizontal'
+                padding: "10dp"
+                spacing: "10dp"
+                pos_hint: {"center_y": .5}
+                size_hint_y: 0.7  # ปรับความสูงเป็น 20% ของพื้นที่แม่
+                size_hint_x: 0.3  # ปรับความกว้างเป็น 80% (ถ้าต้องการ)
+                
+                
+
+                # --- ปุ่ม เปล่า
+                MDCard:
+                    disabled: True
+                    id: btn_dispense
+                    padding: "4dp"
+                    size_hint: None, None
+                    size: "320dp", "200dp"
+                    size_hint_x: 0.20
+                    size_hint_y: 1
+                    md_bg_color: LIGHT_BG
+                    on_release: app.go_to_restock()
+
+            
+            # --- ปุ่ม Restock (เติมของ) ---
+                MDCard:
+                    id: btn_restock
+                    padding: "4dp"
+                    size_hint: None, None
+                    size: "320dp", "200dp"
+                    size_hint_x: 0.30
+                    size_hint_y: 1
+                    md_bg_color: get_color_from_hex("#FFFFFF")
+                    line_color: 0, 0, 0, 1        # สีขอบ (น้ำเงิน)
+                    line_width: dp(0.5)
+                    on_release: app.go_to_restock()
+
+                    MDBoxLayout:
+                        orientation: "vertical"
+                        spacing: "15dp"
+                        padding: "20dp"
+                        adaptive_height: True
+                        pos_hint: {"center_x": .5, "center_y": .5}
+                        spacing: "40dp"
+
+                        MDIcon:
+                            icon: "package-variant-plus"
+                            font_size: "64sp"
+                            pos_hint: {"center_x": .5}
+                            theme_text_color: "Custom"
+                            text_color: RESTOCK_COLOR
+                        
+                        MDLabel:
+                            text: "RESTOCK"
+                            font_style: "H5"
+                            halign: "center"
+                            adaptive_height: True
+                            bold: True
+                            theme_text_color: "Custom"
+                            text_color: RESTOCK_COLOR
+                
+
+
+                # --- ปุ่ม Dispense (เบิกของ) ---
+                MDCard:
+                    id: btn_dispense
+                    padding: "4dp"
+                    size_hint: None, None
+                    size: "320dp", "200dp"
+                    size_hint_x: 0.30
+                    size_hint_y: 1
+                    md_bg_color: get_color_from_hex("#FFFFFF")
+                    line_color: 0, 0, 0, 1        # สีขอบ (น้ำเงิน)
+                    line_width: dp(0.5)
+                    on_release: app.go_to_restock
+
+                    MDBoxLayout:
+                        orientation: "vertical"
+                        spacing: "15dp"
+                        padding: "20dp"
+                        adaptive_height: True
+                        pos_hint: {"center_x": .5, "center_y": .5}
+                        spacing: "40dp"
+
+                        MDIcon:
+                            icon: "package-variant-minus"
+                            font_size: "64sp"
+                            pos_hint: {"center_x": .5}
+                            theme_text_color: "Custom"
+                            text_color: DISPENSE_COLOR
+                        
+                        MDLabel:
+                            text: "DISPENSE"
+                            font_style: "H5"
+                            halign: "center"
+                            adaptive_height: True
+                            bold: True
+                            theme_text_color: "Custom"
+                            text_color: DISPENSE_COLOR
+                
+                # --- ปุ่มเปล่า
+                MDCard:
+                    disabled: True
+                    id: btn_dispense
+                    padding: "4dp"
+                    size_hint: None, None
+                    size: "320dp", "200dp"
+                    size_hint_x: 0.2
+                    size_hint_y: 1
+                    md_bg_color: LIGHT_BG
+                    on_release: app.go_to_restock
+
+                
+
+        # ส่วนปุ่ม Logout (ล่างสุด)
+        MDBoxLayout:
+            adaptive_height: True
+            padding: [0, "10dp", 0, 0]
+            
+            MDRectangleFlatIconButton:
+                icon: "logout"
+                text: "Logout"
+                pos_hint: {"center_x": .5}
+                line_color: get_color_from_hex("#E74C3C")
+                text_color: get_color_from_hex("#E74C3C")
+                icon_color: get_color_from_hex("#E74C3C")
+                on_release: app.logout()
