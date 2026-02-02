@@ -8,6 +8,8 @@ from kivymd.uix.button import MDRaisedButton, MDTextButton
 from kivymd.uix.textfield import MDTextField
 from controller.id_card_controller import IDCardController, Clock
 import json
+from controller.restock_controller import RestockScreen, CartItemWidget, MDScreen, MDDataTable, MDBoxLayout
+from controller.dispense_controller import DispenseScreen
 from kivy.network.urlrequest import UrlRequest
 
 Window.size = (1024, 600)
@@ -18,7 +20,9 @@ KV_FILES = [
     "screen/rfid_staff_tag.kv",
     "screen/qr_scan_screen.kv",
     "screen/user_pass_login.kv",
-    "screen/home_screen.kv"
+    "screen/home_screen.kv",
+    "screen/dispense_screen.kv",
+    "screen/restock_screen.kv",
 ]
 
 screen_helper = """
@@ -30,6 +34,8 @@ MDScreenManager:
     QRScanScreen:
     UserPassLoginScreen:
     HomeScreen:
+    RestockScreen:
+    DispenseScreen:
 """
 
 class SmartLockerApp(MDApp):
@@ -187,13 +193,14 @@ class SmartLockerApp(MDApp):
         print("Navigating to Dispense Mode")
         # เตรียม Logic สำหรับเปลี่ยนหน้าไปหน้าเบิกของ
         # self.change_screen("dispense_screen") 
-        self.show_toast("เข้าสู่โหมดเบิกอุปกรณ์")
+        self.change_screen("dispense_screen")
 
     def go_to_restock(self):
         print("Navigating to Restock Mode")
         # เตรียม Logic สำหรับเปลี่ยนหน้าไปหน้าเติมของ
-        # self.change_screen("restock_screen")
-        self.show_toast("เข้าสู่โหมดเติมอุปกรณ์")
+        self.change_screen("restock_screen")
+
+
 
     def logout(self):
         print("Logging out...")

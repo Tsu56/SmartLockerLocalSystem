@@ -109,7 +109,7 @@
                     md_bg_color: get_color_from_hex("#FFFFFF")
                     line_color: 0, 0, 0, 1        # สีขอบ (น้ำเงิน)
                     line_width: dp(0.5)
-                    on_release: app.go_to_restock
+                    on_release: app.go_to_dispense()
 
                     MDBoxLayout:
                         orientation: "vertical"
@@ -145,7 +145,7 @@
                     size_hint_x: 0.2
                     size_hint_y: 1
                     md_bg_color: LIGHT_BG
-                    on_release: app.go_to_restock
+                    
 
                 
 

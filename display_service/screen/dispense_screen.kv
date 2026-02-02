@@ -1,0 +1,253 @@
+#dispense_screen.kv
+#: import get_color_from_hex kivy.utils.get_color_from_hex
+#: import GridLayout kivy.uix.gridlayout.GridLayout
+
+# กำหนดชุดสีที่ใช้ (Color Palette)
+#: set LIGHT_BG get_color_from_hex("#F7F8FC")
+#: set DISPENSE_COLOR get_color_from_hex("#8B5CF6")  # สีม่วง
+#: set TEXT_COLOR get_color_from_hex("#2C3E50")
+
+
+<DispenseScreen>:
+    name: "dispense_screen"
+    md_bg_color: LIGHT_BG
+
+    MDBoxLayout:
+        orientation: "horizontal"
+        padding: "16dp"
+        spacing: "16dp"
+
+        MDIconButton:
+            icon: "close"
+            pos_hint:{"top": 1}
+            size_hint_x: 0.05
+            on_release: app.change_screen("home_screen")
+
+        # --- ฝั่งซ้าย: Grid แสดงช่องเก็บยา ---
+        MDCard:
+            size_hint_x: 0.95
+            elevation: 1
+            padding: "8dp"
+            radius: [12, ]
+            orientation: "vertical"
+            
+            MDBoxLayout:
+                orientation: "vertical"
+                spacing: "8dp"
+                
+                # Header
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: "48dp"
+                    padding: ["8dp", 0, 0, 0]
+                    
+                    MDLabel:
+                        text: " Storage Slots"
+                        font_style: "H6"
+                        bold: True
+                    
+                    MDLabel:
+                        text: "Select a slot to view medicines"
+                        font_style: "Caption"
+                        theme_text_color: "Hint"
+                        halign: "right"
+                        size_hint_x: 0.4
+
+                MDSeparator:
+
+                # ScrollView สำหรับ Grid ของช่องเก็บยา
+                ScrollView:
+                    do_scroll_x: False
+                    
+                    BoxLayout:
+                        id: slots_grid_container
+                        orientation: "vertical"
+                        size_hint_y: None
+                        height: self.minimum_height
+
+        # --- ฝั่งขวา: ตะกร้าเบิกยา (Dispense Cart Sidebar) ---
+        MDCard:
+            size_hint_x: 0.35
+            elevation: 2
+            radius: [12, ]
+            orientation: "vertical"
+            padding: "16dp"
+            md_bg_color: 1, 1, 1, 1
+
+            # Header ตะกร้า
+            MDBoxLayout:
+                size_hint_y: None
+                height: "40dp"
+                spacing: "8dp"
+                
+                MDIcon:
+                    icon: "cart-outline"
+                    theme_text_color: "Custom"
+                    text_color: DISPENSE_COLOR
+                    
+                MDLabel:
+                    text: "Dispense Cart"
+                    font_style: "Subtitle1"
+                    bold: True
+                    
+                MDLabel:
+                    id: dispense_cart_count_badge
+                    text: "0 list"
+                    halign: "right"
+                    font_style: "Caption"
+                    theme_text_color: "Hint"
+
+            MDSeparator:
+
+            # พื้นที่รายการในตะกร้าเบิก
+            ScrollView:
+                MDList:
+                    id: dispense_cart_list
+                    spacing: "8dp"
+
+            # ส่วนสรุปและปุ่มยืนยัน
+            MDBoxLayout:
+                orientation: "vertical"
+                size_hint_y: None
+                height: "110dp"
+                padding: [0, "12dp", 0, 0]
+                spacing: "8dp"
+
+                MDSeparator:
+
+                MDBoxLayout:
+                    MDLabel:
+                        text: "Total:"
+                        theme_text_color: "Secondary"
+                        font_style: "Body2"
+                        
+                    MDLabel:
+                        id: dispense_total_items_label
+                        text: "0 total"
+                        halign: "right"
+                        bold: True
+
+                MDRaisedButton:
+                    text: "Confirm Dispense"
+                    icon: "check-circle-outline"
+                    size_hint_x: 1
+                    height: "48dp"
+                    md_bg_color: DISPENSE_COLOR
+                    on_release: root.confirm_dispense()
+
+
+# Component สำหรับ Item ในตะกร้าเบิก
+<DispenseCartItemWidget>:
+    size_hint_y: None
+    height: "120dp"
+    padding: "8dp"
+    
+    MDCard:
+        orientation: "vertical"
+        padding: "16dp"
+        spacing: "12dp"
+        radius: [12, ]
+        elevation: 2
+        md_bg_color: 1, 1, 1, 1
+        
+        # Header Row: Product Name + ปุ่มแก้ไข/ลบ
+        MDBoxLayout:
+            size_hint_y: None
+            height: "32dp"
+            spacing: "8dp"
+            
+            MDLabel:
+                text: root.product_name
+                font_style: "Subtitle2"
+                bold: True
+                size_hint_x: 0.7
+            
+            Widget:
+                size_hint_x: 0.1
+                
+            MDIconButton:
+                icon: "pencil"
+                theme_text_color: "Custom"
+                text_color: get_color_from_hex("#3498DB")
+                size_hint_x: 0.15
+                pos_hint:{"center_y": 1}
+                on_release: root.edit_callback() if root.edit_callback else None
+                
+            MDIconButton:
+                icon: "trash-can-outline"
+                theme_text_color: "Custom"
+                text_color: get_color_from_hex("#E74C3C")
+                size_hint_x: 0.15
+                pos_hint:{"center_y": 1}
+                on_release: root.delete_callback() if root.delete_callback else None
+        
+        # Info Grid: จัดเป็น 2 คอลัมน์
+        GridLayout:
+            cols: 2
+            size_hint_y: None
+            height: "48dp"
+            spacing: "12dp"
+            
+            # Product ID
+            MDBoxLayout:
+                orientation: "horizontal"
+                spacing: "6dp"
+                size_hint_y: None
+                height: "22dp"
+                
+                MDIcon:
+                    icon: "barcode"
+                    size_hint_x: None
+                    width: "20dp"
+                    theme_text_color: "Custom"
+                    text_color: get_color_from_hex("#95A5A6")
+                    
+                MDLabel:
+                    text: f"ID: {root.product_id}"
+                    font_style: "Caption"
+                    theme_text_color: "Secondary"
+            
+            # Slot
+            MDBoxLayout:
+                orientation: "horizontal"
+                spacing: "6dp"
+                size_hint_y: None
+                height: "22dp"
+                
+                MDIcon:
+                    icon: "grid"
+                    size_hint_x: None
+                    width: "20dp"
+                    theme_text_color: "Custom"
+                    text_color: get_color_from_hex("#8B5CF6")
+                    
+                MDLabel:
+                    text: f"Slot: {root.slot_number}"
+                    font_style: "Caption"
+                    theme_text_color: "Custom"
+                    text_color: get_color_from_hex("#8B5CF6")
+                    bold: True
+            
+            # Quantity
+            MDBoxLayout:
+                orientation: "horizontal"
+                spacing: "6dp"
+                size_hint_y: None
+                height: "22dp"
+                
+                MDIcon:
+                    icon: "package-variant"
+                    size_hint_x: None
+                    width: "20dp"
+                    theme_text_color: "Custom"
+                    text_color: get_color_from_hex("#3498DB")
+                    
+                MDLabel:
+                    text: f"Qty: {root.quantity}"
+                    font_style: "Body2"
+                    theme_text_color: "Custom"
+                    text_color: get_color_from_hex("#3498DB")
+                    bold: True
+            
+            # ช่องว่าง
+            Widget:
