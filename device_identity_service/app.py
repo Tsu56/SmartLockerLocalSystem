@@ -1,11 +1,8 @@
-from typing import Annotated
+from fastapi import FastAPI
+from api import router as auth_router
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Query, HTTPException
-from sqlmodel import SQLModel, select
-from database import engine
-
-def create_db_and_tables():
-    SQLModel.metadata.create_all(engine)
+from sqlmodel import SQLModel
+from database import create_db_and_tables
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -14,4 +11,4 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-@app.post("/api/")
+app.include_router(auth_router)
