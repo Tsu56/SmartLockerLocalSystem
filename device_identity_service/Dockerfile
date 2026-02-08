@@ -15,6 +15,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # คัดลอกไฟล์โปรเจกต์ทั้งหมด
 COPY . .
 
-# เปิดพอร์ต 5001
-EXPOSE 5001
-CMD ["fastapi", "run", "app.py", "--port", "5001"]
+# เปิดพอร์ต 8000
+EXPOSE 8000
+CMD ["fastapi", "run", "app.py", "--port", "8000", "--host", "0.0.0.0"]

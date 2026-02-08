@@ -1,18 +1,15 @@
 services:
-  # Service สำหรับระบบยืนยันตัวตน
-  local-auth-service:
+  display-service:
     # ระบุตำแหน่งโฟลเดอร์ที่มี Dockerfile อยู่
     build: 
-      context: ./local_auth_service
+      context: ./display_service
       dockerfile: Dockerfile
-    container_name: local_auth_service
+    container_name: display_service
     ports:
-      - "5000:5000"
+      - "5000:8000"
     volumes:
       # เชื่อมโค้ดจากโฟลเดอร์ย่อยเข้ากับ Container
-      - ./local_auth_service:/local_auth_service
-      # เชื่อมฐานข้อมูลให้อยู่ในโฟลเดอร์ database ของ Service นั้นๆ
-      - ./local_auth_service/database:/local_auth_service/database
+      - ./display_service:/display_service
     environment:
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
@@ -20,7 +17,6 @@ services:
     networks:
       - smart-locker-network
 
-  # Service สำหรับระบบยืนยันตัวตน
   device-identity-service:
     # ระบุตำแหน่งโฟลเดอร์ที่มี Dockerfile อยู่
     build: 
@@ -28,7 +24,7 @@ services:
       dockerfile: Dockerfile
     container_name: device_identity_service
     ports:
-      - "5001:5001"
+      - "5001:8000"
     volumes:
       # เชื่อมโค้ดจากโฟลเดอร์ย่อยเข้ากับ Container
       - ./device_identity_service:/device_identity_service
@@ -38,6 +34,26 @@ services:
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
       - SERVER_URL=${SERVER_URL}
+    restart: always
+    networks:
+      - smart-locker-network
+
+  local-auth-service:
+    # ระบุตำแหน่งโฟลเดอร์ที่มี Dockerfile อยู่
+    build: 
+      context: ./local_auth_service
+      dockerfile: Dockerfile
+    container_name: local_auth_service
+    ports:
+      - "5002:8000"
+    volumes:
+      # เชื่อมโค้ดจากโฟลเดอร์ย่อยเข้ากับ Container
+      - ./local_auth_service:/local_auth_service
+      # เชื่อมฐานข้อมูลให้อยู่ในโฟลเดอร์ database ของ Service นั้นๆ
+      - ./local_auth_service/database:/local_auth_service/database
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
     restart: always
     networks:
       - smart-locker-network
