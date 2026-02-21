@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 import httpx, os, threading, time, requests, hashlib
 from fastapi import APIRouter, BackgroundTasks, HTTPException, status
-from sqlmodel import select, delete, func, or_
+from sqlmodel import select, delete, func, or_, update
 from typing import List
 from datetime import datetime, timezone
 from passlib.context import CryptContext
@@ -19,7 +19,7 @@ from database.schema import (
 from encryption import encrypt_data, decrypt_data
 from getkey import get_internal_shared_secret, get_search_hash_salt
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__truncate_error=True)
 
 router = APIRouter(prefix="/auth", tags=["Local Authentication"])
 
@@ -219,6 +219,16 @@ def run_user_sync_logic():
                         return len(users_to_sync)
                 else:
                     print(f"📡 Sync Server Error: {response.status_code}")
+        elif auth_res.status_code == 404:
+            print(f"❌ Revoke detected (Status: {auth_res.status_code})")
+            print(f"Response: {auth_res.text}")
+            with Session(engine) as session:
+                # Soft Delete ทุกคนในตาราง User และ UserPermission
+                session.exec(update(User).values(deleted_at=datetime.now(timezone.utc)))
+                session.exec(update(UserPermission).values(deleted_at=datetime.now(timezone.utc)))
+                session.commit()
+            print("✅ All users locally revoked due to missing auth headers")
+
     except Exception as e:
         print(f"📡 User Sync Error: {e}")
     return 0
@@ -246,7 +256,6 @@ def login_with_password(login_data: UserLogin, session: SessionDep):
     # ค้นหา User จากหลายช่องทางด้วย SQL เพียงคำสั่งเดียว (O(1) Search)
     statement = select(User).where(
         or_(
-            User.user_id == identifier,
             User.email == identifier,
             User.citizen_id_search_hash == search_hash
         ),
@@ -268,7 +277,7 @@ def login_with_password(login_data: UserLogin, session: SessionDep):
     permission = session.exec(perm_stmt).first()
     
     # บันทึก Log สำเร็จ
-    log = AuthLog(user_id=user.user_id, username=user.user_id, login_method="password", status="success")
+    log = AuthLog(user_id=user.user_id, username=user.first_name, login_method="password", status="success")
     session.add(log)
     session.commit()
     
@@ -311,7 +320,7 @@ def login_with_smartcard(login_in: SmartCardLogin, session: SessionDep):
     permission = session.exec(perm_stmt).first()
 
     # บันทึก Log สำเร็จ
-    log = AuthLog(user_id=user.user_id, username=user.user_id, login_method="smartcard", status="success")
+    log = AuthLog(user_id=user.user_id, username=user.first_name, login_method="smartcard", status="success")
     session.add(log)
     session.commit()
     

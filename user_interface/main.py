@@ -19,6 +19,8 @@ GATEWAY_URL = "http://localhost:5000/api"
 AUTH_CARD_URL = f"{GATEWAY_URL}/auth/auth/login/smartcard"
 AUTH_PWD_URL = f"{GATEWAY_URL}/auth/auth/login/password"
 
+DEVICE_ACTIVATE_URL = f"{GATEWAY_URL}/identity/device/activate"
+
 KV_FILES = [
     "screen/main_screen.kv",
     "screen/id_card_login.kv",
@@ -125,6 +127,41 @@ class SmartLockerApp(MDApp):
             self.card_border_width = 4
             self.card_status_color = self.status_error_color
             self.card_status_text = error_msg
+
+    def submit_registration(self, provision_code):
+        if not provision_code.strip():
+            self.show_toast("Please enter the provision code")
+            return
+        
+        # Logic สำหรับส่ง provision code ไปยัง Server เพื่อทำการลงทะเบียน
+        print(f"Submitting provision code: {provision_code}")
+        # ตัวอย่างการส่ง Request (สามารถปรับ URL และ Payload ตาม API ที่มี)
+        payload = json.dumps({
+            "provision_code": provision_code.strip()
+        })
+        
+        headers = {'Content-type': 'application/json', 'Accept': 'application/json'}
+        
+        UrlRequest(
+            DEVICE_ACTIVATE_URL,
+            req_body=payload,
+            req_headers=headers,
+            on_success=self._on_device_activation_success,
+            on_failure=self._on_device_activation_failed,
+            on_error=self._on_device_activation_error,
+            method='POST',
+            timeout=10
+        )
+
+    def _on_device_activation_success(self, request, result):
+        self.show_toast("Device activated successfully!")
+        Clock.schedule_once(lambda dt: self.change_screen("main_screen"), 1)
+    
+    def _on_device_activation_failed(self, request, result):
+        self.show_toast("Device activation failed: " + str(result))
+    
+    def _on_device_activation_error(self, request, error):
+        self.show_toast("Network error during device activation: " + str(error))
 
     def process_login(self, username, password):
         # 1. ตรวจสอบค่าว่างเบื้องต้นก่อนส่ง

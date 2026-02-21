@@ -91,7 +91,7 @@
                         text: "REGISTER NOW"
                         size_hint_x: 1
                         height: dp(48)
-                        on_release: root.submit_registration()
+                        on_release: app.submit_registration(_provision_code_input.text)
 
                     # 4. หมายเหตุ (Note)
                     MDBoxLayout:
