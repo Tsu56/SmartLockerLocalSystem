@@ -1,0 +1,27 @@
+<Gui_manager>:								#Class ของ Screen Manager
+    MainMenu:								#บอกว่ามีหน้าจออะไรบ้างภายใน Screen Manager
+    Dashboard:
+<MainMenu>:
+    name: "main"
+    BoxLayout:
+        orientation: "vertical"
+        BoxLayout:
+            Label:
+                text: "this is Mainmenu Page"
+            Button:
+                text: "Go to page 1"
+                on_press: root.manager.current = "dashboard"
+        BoxLayout:
+            orientation: "vertical"
+            Label:
+                text: "this is Mainmenu Page"
+            Button:
+                text: "Go to page 1"
+<Dashboard>:
+    name: "dashboard"
+    BoxLayout:
+        Label:
+            text: "temp: 30c"
+        Button:
+            text: "Go to page 1"
+            on_press: root.manager.current = "main"

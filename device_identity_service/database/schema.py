@@ -2,7 +2,7 @@ from sqlmodel import SQLModel, Field
 from datetime import datetime, timezone
 
 class DeviceInfoBase(SQLModel):
-    device_id: str = Field(index=True, unique=True, description="รหัสประจำตู้ locker เช่น LKR-001")
+    locker_id: str = Field(index=True, unique=True, description="รหัสประจำตู้ locker เช่น LKR-001")
     locker_location_detail: str | None = Field(default=None, description="รายละเอียดสถานที่ เช่น 'อาคาร 1 ชั้น 1 ห้องผ่าตัด'")
     is_active: bool = Field(default=True, description="สถานะของตู้ (พร้อมใช้งานหรือไม่)")
 

@@ -1,141 +1,331 @@
-from fastapi import APIRouter, HTTPException, status
-from sqlmodel import select
+from dotenv import load_dotenv
+import httpx, os, threading, time, requests, hashlib
+from fastapi import APIRouter, BackgroundTasks, HTTPException, status
+from sqlmodel import select, delete, func, or_
 from typing import List
-import hashlib
+from datetime import datetime, timezone
+from passlib.context import CryptContext
+
+load_dotenv()
 
 # นำเข้าส่วนประกอบจากโมดูล local_auth ที่เราสร้างไว้
-from database import SessionDep
-from database.models import User, SmartCard, AuthLog
+from database import SessionDep, engine, Session
+from database.models import User, UserPermission, AuthLog
 from database.schema import (
     UserCreate, UserPublic, UserLogin,
-    SmartCardCreate, SmartCardPublic, SmartCardLogin,
+    SmartCardLogin, RFIDTagLogin, QRCodeLogin,
     AuthLogCreate, AuthLogPublic
 )
+from encryption import encrypt_data, decrypt_data
+from getkey import get_internal_shared_secret, get_search_hash_salt
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 router = APIRouter(prefix="/auth", tags=["Local Authentication"])
 
-def hash_data(data: str) -> str:
-    """ฟังก์ชันเข้ารหัสข้อมูลแบบพื้นฐาน"""
-    return hashlib.sha256(data.encode()).hexdigest()
+CLOUD_SERVER_URL = os.getenv("SERVER_URL", "")
+
+IDENTITY_SERVICE_URL = "http://device-identity-service:8000/device/internal/auth-headers"
+
+INTERNAL_SECRET = get_internal_shared_secret()
+
+# Salt ลับสำหรับการทำ Blind Index (ควรดึงจาก .env เพื่อความปลอดภัย)
+SEARCH_HASH_SALT = get_search_hash_salt()
+
+def get_search_hash(data: str) -> str:
+    """สร้างค่า Hash สำหรับใช้ค้นหา (Blind Index)"""
+    if not data:
+        return None
+    combined = f"{str(data).strip()}{SEARCH_HASH_SALT}"
+    return hashlib.sha256(combined.encode()).hexdigest()
+
+def verify_password(plain_password, hashed_password):
+    # ฟังก์ชันนี้จะดึง Salt ออกมาจาก hashed_password เองอัตโนมัติ 
+    # แล้วคำนวณว่า plain_password ตรงกันหรือไม่
+    return pwd_context.verify(plain_password, hashed_password)
 
 # --- User Management ---
 
-@router.post("/register", response_model=UserPublic)
-def register_user(user_in: UserCreate, session: SessionDep):
-    """ลงทะเบียนผู้ใช้งานใหม่"""
-    # ตรวจสอบว่า Username ซ้ำหรือไม่
-    statement = select(User).where(User.username == user_in.username)
-    existing_user = session.exec(statement).first()
-    if existing_user:
-        raise HTTPException(status_code=400, detail="Username already registered")
+def user_sync_agent():
+    """
+    Agent ทำงานเบื้องหลัง คอยดึงข้อมูลผู้ใช้และสิทธิ์จาก Server มาอัปเดตลงตู้
+    """
+    print("🚀 User Sync Agent Started...")
+    time.sleep(10)
+
+    while True:
+        try:
+            # 1. ขอ Headers ยืนยันตัวตน
+            auth_res = requests.get(
+                IDENTITY_SERVICE_URL, 
+                headers={"X-Internal-Secret": INTERNAL_SECRET},
+                timeout=5
+            )
+            
+            if auth_res.status_code == 200:
+                cloud_headers = auth_res.json()
+                
+                with Session(engine) as session:
+                    # 2. หาเวลาที่ Sync ล่าสุดจากทั้งตาราง User และ UserPermission
+                    last_sync_time = "1970-01-01T00:00:00Z"
+                    
+                    # ค้นหาค่าวันเวลาที่ใหม่ที่สุดจาก User
+                    u_max = session.exec(select(
+                        func.max(User.created_at), 
+                        func.max(User.updated_at), 
+                        func.max(User.deleted_at)
+                    )).first()
+                    
+                    # ค้นหาค่าวันเวลาที่ใหม่ที่สุดจาก UserPermission
+                    p_max = session.exec(select(
+                        func.max(UserPermission.created_at), 
+                        func.max(UserPermission.updated_at), 
+                        func.max(UserPermission.deleted_at)
+                    )).first()
+                    
+                    # รวม Timestamps ทั้งหมดเพื่อหาจุดที่ใหม่ที่สุดจริง ๆ
+                    all_ts = [ts for ts in list(u_max or []) + list(p_max or []) if ts is not None]
+                    
+                    if all_ts:
+                        last_sync_time = max(all_ts).replace(tzinfo=timezone.utc).isoformat()
+
+                    # 3. ยิงไปที่ Server
+                    sync_url = f"{CLOUD_SERVER_URL}/userLockerGrant/sync/users"
+                    params = {"last_sync": last_sync_time}
+                    
+                    response = requests.get(sync_url, headers=cloud_headers, params=params, timeout=15)
+                    
+                    if response.status_code == 200:
+                        sync_data = response.json()
+                        users_to_sync = sync_data.get("data", [])
+                        print(f"📥 Received sync data: {users_to_sync}")
+                        
+                        if users_to_sync:
+                            print(f"🔄 Sync: Received {len(users_to_sync)} updates (including permissions)")
+                            for u_data in users_to_sync:
+                                process_user_sync(session, u_data)
+                            session.commit()
+                        
+        except Exception as e:
+            print(f"📡 User Sync Agent Error: {e}")
+
+        time.sleep(300)
+
+def process_user_sync(session, u_data):
+    """จัดการข้อมูล User และ UserPermission แบบ Relational Upsert"""
+    user_info = u_data.get("User", {})
+    user_id = user_info.get("user_id")
     
-    # สร้าง User ใหม่พร้อมเข้ารหัสรหัสผ่าน
-    db_user = User(
-        username=user_in.username,
-        full_name=user_in.full_name,
-        role=user_in.role,
-        hashed_password=hash_data(user_in.password)
-    )
-    session.add(db_user)
-    session.commit()
-    session.refresh(db_user)
-    return db_user
+    # --- 1. จัดการข้อมูลตาราง User ---
+    user = session.exec(select(User).where(User.user_id == user_id)).first()
+    
+    server_now_str = u_data.get("updated_at") or datetime.now(timezone.utc).isoformat()
+    server_now = datetime.fromisoformat(server_now_str.replace('Z', '+00:00'))
 
-# --- Smart Card Management ---
-
-@router.post("/link-card", response_model=SmartCardPublic)
-def link_smart_card(card_in: SmartCardCreate, session: SessionDep):
-    """ผูกบัตรประชาชนเข้ากับบัญชีผู้ใช้ (1 คน ต่อ 1 ใบ)"""
-    # 1. ตรวจสอบว่ามี User นี้จริงไหม
-    user = session.get(User, card_in.user_id)
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        user = User(user_id=user_id)
+        if user_info.get("created_at"):
+            user.created_at = datetime.fromisoformat(user_info["created_at"].replace('Z', '+00:00'))
+        print(f"🆕 Sync: Preparing New User {user_id}")
     
-    # 2. ตรวจสอบว่า User นี้มีบัตรผูกไว้แล้วหรือยัง (1-to-1 check)
-    if user.smart_card:
-        raise HTTPException(status_code=400, detail="User already has a linked smart card")
+    # Mapping User Data
+    user.email = user_info.get("email")
+    user.first_name = user_info.get("first_name")
+    user.last_name = user_info.get("last_name")
+    user.hashed_password = user_info.get("password")
+    # เข้ารหัส citizen_id_encrypted ก่อนบันทึกลงฐานข้อมูล
+    raw_citizen_id = user_info.get("citizen_id") or user_info.get("citizen_id_encrypted")
+    if raw_citizen_id:
+        # เข้ารหัสสำหรับเก็บ (AES-Fernet)
+        user.citizen_id_encrypted = encrypt_data(str(raw_citizen_id))
+        # ทำ Hash สำหรับค้นหา (Blind Index)
+        if hasattr(user, 'citizen_id_search_hash'):
+            user.citizen_id_search_hash = get_search_hash(str(raw_citizen_id))
+    user.updated_at = server_now
     
-    hashed_id = hash_data(card_in.citizen_id)
+    # จัดการ Soft Delete ของ User
+    delete_ts = user_info.get("deleted_at") or u_data.get("deleted_at")
+    if delete_ts:
+        user.deleted_at = datetime.fromisoformat(delete_ts.replace('Z', '+00:00'))
+    else:
+        user.deleted_at = None
+
+    session.add(user)
     
-    # 3. ตรวจสอบว่าเลขบัตรนี้ถูกใช้ไปแล้วหรือยัง
-    statement = select(SmartCard).where(SmartCard.citizen_id == hashed_id)
-    existing_card = session.exec(statement).first()
-    if existing_card:
-        raise HTTPException(status_code=400, detail="Citizen ID already linked to another user")
+    # --- 2. จัดการข้อมูลตาราง UserPermission ---
+    permission = session.exec(select(UserPermission).where(UserPermission.user_id == user_id)).first()
     
-    # 4. บันทึกข้อมูลบัตร
-    db_card = SmartCard(
-        citizen_id=hashed_id,
-        user_id=card_in.user_id
-    )
-    session.add(db_card)
-    session.commit()
-    session.refresh(db_card)
-    return db_card
+    if not permission:
+        permission = UserPermission(user_id=user_id)
+        print(f"🔑 Sync: Initialized Permissions for {user_id}")
+    
+    # Mapping Permission Data (0/1 ตามที่ได้รับจาก Server)
+    permission.permission_withdraw = u_data.get("permission_withdraw", 1)
+    permission.permission_restock = u_data.get("permission_restock", 0)
+    permission.updated_at = server_now
+    
+    # กรณีสิทธิ์ถูกลบ (เช่น Server ยกเลิกชุดสิทธิ์นี้)
+    if u_data.get("deleted_at"):
+        permission.deleted_at = user.deleted_at
+    else:
+        permission.deleted_at = None
+        
+    session.add(permission)
+
+def run_user_sync_logic():
+    """
+    Logic หลักในการดึงข้อมูลจาก Server มาลงเครื่อง
+    แยกออกมาเพื่อให้เรียกใช้ได้จากทั้ง Agent และ Manual Trigger
+    """
+    try:
+        secret_hint = f"{INTERNAL_SECRET[:3]}***" if INTERNAL_SECRET else "MISSING"
+        print(f"🔍 DEBUG: Attempting Identity Auth with Secret: {secret_hint}")
+
+        # 1. ขอ Headers ยืนยันตัวตน
+        auth_res = requests.get(
+            IDENTITY_SERVICE_URL, 
+            headers={"X-Internal-Secret": INTERNAL_SECRET},
+            timeout=5
+        )
+        
+        if auth_res.status_code == 200:
+            cloud_headers = auth_res.json()
+            
+            with Session(engine) as session:
+                last_sync_time = "1970-01-01T00:00:00Z"
+                
+                # หาจุดเวลาล่าสุดจากทั้งสองตาราง
+                u_max = session.exec(select(func.max(User.created_at), func.max(User.updated_at), func.max(User.deleted_at))).first()
+                p_max = session.exec(select(func.max(UserPermission.created_at), func.max(UserPermission.updated_at), func.max(UserPermission.deleted_at))).first()
+                
+                all_ts = [ts for ts in list(u_max or []) + list(p_max or []) if ts is not None]
+                if all_ts:
+                    last_sync_time = max(all_ts).replace(tzinfo=timezone.utc).isoformat()
+
+                sync_url = f"{CLOUD_SERVER_URL}/userLockerGrant/sync/users"
+                params = {"last_sync": last_sync_time}
+                
+                response = requests.get(sync_url, headers=cloud_headers, params=params, timeout=15)
+                
+                if response.status_code == 200:
+                    sync_data = response.json()
+                    users_to_sync = sync_data.get("data", [])
+                    
+                    if users_to_sync:
+                        print(f"🔄 Sync: Received {len(users_to_sync)} updates")
+                        for u_data in users_to_sync:
+                            process_user_sync(session, u_data)
+                        session.commit()
+                        return len(users_to_sync)
+                else:
+                    print(f"📡 Sync Server Error: {response.status_code}")
+    except Exception as e:
+        print(f"📡 User Sync Error: {e}")
+    return 0
+
+@router.post("/sync/trigger")
+async def trigger_sync(background_tasks: BackgroundTasks):
+    """
+    Endpoint สำหรับสั่งให้ตู้ทำการ Sync ทันที (Manual Trigger)
+    เหมาะสำหรับการทดสอบ หรือสั่งการจาก UI
+    """
+    # รันเป็น Background Task เพื่อไม่ให้ API ค้างถ้าระบบ Sync ใช้เวลานาน
+    background_tasks.add_task(run_user_sync_logic)
+    return {"message": "User sync process triggered in background"}
 
 # --- Login Logic ---
 
 @router.post("/login/password")
 def login_with_password(login_data: UserLogin, session: SessionDep):
-    """เข้าสู่ระบบด้วย Username และ Password"""
-    statement = select(User).where(User.username == login_data.username)
+    """เข้าสู่ระบบด้วย UserID, Email หรือ CitizenID และ Password"""
+    identifier = login_data.username.strip()
+    
+    # สร้าง Hash สำหรับใช้ค้นหาใน SQL
+    search_hash = get_search_hash(identifier)
+    
+    # ค้นหา User จากหลายช่องทางด้วย SQL เพียงคำสั่งเดียว (O(1) Search)
+    statement = select(User).where(
+        or_(
+            User.user_id == identifier,
+            User.email == identifier,
+            User.citizen_id_search_hash == search_hash
+        ),
+        User.deleted_at == None
+    )
     user = session.exec(statement).first()
     
-    if not user or user.hashed_password != hash_data(login_data.password):
-        # บันทึก Log กรณีล้มเหลว
-        log = AuthLog(username=login_data.username, login_method="password", status="failed")
+    if not user or not verify_password(login_data.password, user.hashed_password):
+        log = AuthLog(username=identifier, login_method="password", status="failed")
         session.add(log)
         session.commit()
-        raise HTTPException(status_code=401, detail="Invalid username or password")
+        raise HTTPException(status_code=401, detail="ข้อมูลประจำตัวหรือรหัสผ่านไม่ถูกต้อง")
     
-    # บันทึก Log กรณีสำเร็จ
-    log = AuthLog(user_id=user.id, username=user.username, login_method="password", status="success")
+    # ดึงสิทธิ์การใช้งาน
+    perm_stmt = select(UserPermission).where(
+        UserPermission.user_id == user.user_id,
+        UserPermission.deleted_at == None
+    )
+    permission = session.exec(perm_stmt).first()
+    
+    # บันทึก Log สำเร็จ
+    log = AuthLog(user_id=user.user_id, username=user.user_id, login_method="password", status="success")
     session.add(log)
     session.commit()
     
-    response_data = {
-        "id": user.id,
-        "username": str(user.username),
-        "full_name": str(user.full_name) if user.full_name else None,
-        "role": str(user.role) if hasattr(user, 'role') else "user",
-        "is_active": bool(user.is_active) if hasattr(user, 'is_active') else True
-    }
-
     return {
         "message": "Login successful", 
-        "user": response_data
+        "user": {
+            "user_id": user.user_id,
+            "full_name": f"{user.first_name} {user.last_name}",
+            "permissions": {
+                "can_withdraw": bool(permission.permission_withdraw) if permission else True,
+                "can_restock": bool(permission.permission_restock) if permission else False
+            }
+        }
     }
 
 @router.post("/login/smartcard")
 def login_with_smartcard(login_in: SmartCardLogin, session: SessionDep):
-    hashed_input = hash_data(login_in.citizen_id)
+    """เข้าสู่ระบบด้วยการเสียบบัตรประชาชน (ใช้ Blind Index ค้นหา)"""
+    raw_citizen_id = login_in.citizen_id.strip()
+    search_hash = get_search_hash(raw_citizen_id)
 
-    """เข้าสู่ระบบด้วยการเสียบบัตรประชาชน"""
-    statement = select(SmartCard).where(SmartCard.citizen_id == hashed_input)
-    card = session.exec(statement).first()
+    # ค้นหาโดยตรงผ่าน Hash Index ไม่ต้องดึงทุกคนมาวนลูปถอดรหัส
+    statement = select(User).where(
+        User.citizen_id_search_hash == search_hash,
+        User.deleted_at == None
+    )
+    user = session.exec(statement).first()
     
-    if not card or not card.user:
-        # บันทึก Log กรณีล้มเหลว
+    if not user:
         log = AuthLog(login_method="smartcard", status="failed")
         session.add(log)
         session.commit()
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Card not registered or user not found")
+        raise HTTPException(status_code=401, detail="ไม่พบข้อมูลผู้ใช้จากบัตรประชาชนใบนี้")
     
-    # บันทึก Log กรณีสำเร็จ
-    user = card.user
-    log = AuthLog(user_id=user.id, username=user.username, login_method="smartcard", status="success")
+    # ดึงสิทธิ์การใช้งาน
+    perm_stmt = select(UserPermission).where(
+        UserPermission.user_id == user.user_id,
+        UserPermission.deleted_at == None
+    )
+    permission = session.exec(perm_stmt).first()
+
+    # บันทึก Log สำเร็จ
+    log = AuthLog(user_id=user.user_id, username=user.user_id, login_method="smartcard", status="success")
     session.add(log)
     session.commit()
     
-    response_data = {
-        "id": user.id,
-        "username": str(user.username),
-        "full_name": str(user.full_name) if user.full_name else None,
-        "role": str(user.role) if hasattr(user, 'role') else "user",
-        "is_active": bool(user.is_active) if hasattr(user, 'is_active') else True
-    }
-
     return {
         "message": "Login successful", 
-        "user": response_data
+        "user": {
+            "user_id": user.user_id,
+            "full_name": f"{user.first_name} {user.last_name}",
+            "permissions": {
+                "can_withdraw": bool(permission.permission_withdraw) if permission else True,
+                "can_restock": bool(permission.permission_restock) if permission else False
+            }
+        }
     }
+
+sync_thread = threading.Thread(target=user_sync_agent, daemon=True)
+sync_thread.start()

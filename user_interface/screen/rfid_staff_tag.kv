@@ -7,6 +7,14 @@
     md_bg_color: LIGHT_BG
 
     MDRectangleFlatButton:
+        text: "NEXT"
+        pos_hint: {'center_x': 0.5, 'center_y': 0.2}
+        line_color: get_color_from_hex("#11cd3d")
+        theme_text_color: "Custom"
+        text_color: get_color_from_hex("#11cd3d")
+        on_release: app.change_screen("provision_screen")
+
+    MDRectangleFlatButton:
         text: "CANCEL"
         pos_hint: {'center_x': 0.5, 'center_y': 0.1}
         line_color: RED_COLOR

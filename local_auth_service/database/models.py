@@ -1,4 +1,4 @@
-from database import UserBase, SmartCardBase, AuthLogBase
+from database import UserBase, UserPermissionBase, AuthLogBase
 from sqlmodel import Field, Relationship
 from datetime import datetime, timezone
 from typing import List, Optional
@@ -6,28 +6,29 @@ from typing import List, Optional
 class User(UserBase, table=True):
     id: int | None = Field(default=None, primary_key=True)
     hashed_password: str = Field(description="รหัสผ่านที่ถูกเข้ารหัสแล้ว")
+    citizen_id_search_hash: Optional[str] = Field(default=None, index=True, description="Hash สำหรับใช้ค้นหาบัตรประชาชน")
     created_at: datetime | None = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime | None = Field(default=None)
+    deleted_at: datetime | None = Field(default=None)
     
     # Relationships
-    smart_card: Optional["SmartCard"] = Relationship(back_populates="user")
+    user_permissions: List["UserPermission"] = Relationship(back_populates="user")
     auth_logs: List["AuthLog"] = Relationship(back_populates="user")
 
-class SmartCard(SmartCardBase, table=True):
+class UserPermission(UserPermissionBase, table=True):
     id: int | None = Field(default=None, primary_key=True)
-    registered_at: datetime | None = Field(default_factory=lambda: datetime.now(timezone.utc))
-    
-    # Foreign Key
-    user_id: int = Field(foreign_key="user.id", unique=True)
+    user_id: str = Field(foreign_key="user.user_id")
+    created_at: datetime | None = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime | None = Field(default=None)
+    deleted_at: datetime | None = Field(default=None)
     
     # Relationships
-    user: User = Relationship(back_populates="smart_card")
+    user: Optional[User] = Relationship(back_populates="user_permissions")
 
 class AuthLog(AuthLogBase, table=True):
     id: int | None = Field(default=None, primary_key=True)
+    user_id: str | None = Field(default=None, foreign_key="user.user_id")
     timestamp: datetime | None = Field(default_factory=lambda: datetime.now(timezone.utc))
-    
-    # Foreign Key (Optional เพราะบางที Login fail อาจจะไม่รู้ User ID ที่แน่นอน)
-    user_id: int | None = Field(default=None, foreign_key="user.id")
     
     # Relationships
     user: Optional[User] = Relationship(back_populates="auth_logs")

@@ -1,11 +1,13 @@
 import requests
 from dotenv import load_dotenv
 import os
-from fastapi import APIRouter, HTTPException, status
-from sqlmodel import select
+import threading
+import time
+from fastapi import APIRouter, HTTPException, status, Header, BackgroundTasks
+from sqlmodel import select, delete
 from datetime import datetime, timezone
 
-from database import SessionDep
+from database import SessionDep, engine, Session
 from database.models import DeviceInfo
 from database.schema import (
     DeviceInfoCreate, 
@@ -13,12 +15,163 @@ from database.schema import (
     DeviceInfoUpdate, 
     DeviceActivationRequest
 )
+from encryption import encrypt_data, decrypt_data
+from getkey import get_internal_shared_secret
 
 router = APIRouter(prefix="/device", tags=["Device Identification"])
 
 load_dotenv()
 
 CLOUD_SERVER_URL = os.getenv("SERVER_URL", "")
+
+INTERNAL_SHARED_SECRET = get_internal_shared_secret()
+
+# --- Internal API for other services ---
+@router.get("/internal/auth-headers")
+def get_internal_auth_headers(x_internal_secret: str = Header(None, alias="X-Internal-Secret")):
+    """
+    Endpoint สำหรับให้ Service ภายในตู้มาขอ Header 
+    เพิ่มความปลอดภัยด้วยการเช็ค Shared Secret ก่อนคืนค่าข้อมูลลับ
+    """
+    # 1. ตรวจสอบรหัสลับภายใน (ป้องกันการเรียกจากบุคคลภายนอก)
+    if not x_internal_secret or x_internal_secret != INTERNAL_SHARED_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Access Denied: Invalid internal secret"
+        )
+
+    with Session(engine) as session:
+        device = session.exec(select(DeviceInfo)).first()
+        if not device or not device.api_token_encrypted:
+            raise HTTPException(status_code=404, detail="Device not activated")
+        
+        try:
+            # ถอดรหัสเพื่อส่งให้ Service ภายในนำไปใช้งาน
+            decrypted_token = decrypt_data(device.api_token_encrypted)
+            return {
+                "locker_id": device.locker_id,
+                "api_token": f"Bearer {decrypted_token}"
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail="Decryption failed")
+
+def perform_local_revoke():
+    """ลบข้อมูลตัวตนในเครื่องทิ้ง เมื่อ Server สั่ง Revoke"""
+    with Session(engine) as session:
+        session.exec(delete(DeviceInfo))
+        session.commit()
+    print("⚠️  CRITICAL: Device Identity has been revoked and wiped locally.")
+
+# --- Heartbeat Agent Logic ---
+def run_heartbeat_agent():
+    try:
+        with Session(engine) as session:
+            device = session.exec(select(DeviceInfo)).first()
+            
+            if device and device.api_token_encrypted:
+                # ถอดรหัส api_token ก่อนส่งไป
+                decrypted_token = decrypt_data(device.api_token_encrypted)
+                # เตรียมข้อมูลส่งไปเช็คสถานะที่ Cloud Server
+                headers = {
+                    "locker_id": device.locker_id,
+                    "api_token": f"Bearer {decrypted_token}"
+                }
+                
+                # ยิงไปที่ Endpoint สำหรับเช็คสถานะ (ที่ฝั่ง Express.js เตรียมไว้)
+                response = requests.post(
+                    f"{CLOUD_SERVER_URL}/locker/heartbeat",
+                    headers=headers,
+                    timeout=15
+                )
+
+                print(f"📡 Sending heartbeat to: {CLOUD_SERVER_URL}/locker/heartbeat")
+
+                print(f"📡 [HEARTBEAT RESPONSE] Status: {response.status_code}")
+                # ถ้า Server ตอบกลับว่า 403 (Forbidden) หรือ 401 (Unauthorized)
+                # แสดงว่าตู้ถูกถอดสิทธิ์ หรือ Token ไม่ถูกต้องแล้ว
+                if response.status_code in [401, 403]:
+                    print(f"❌ Revoke detected (Status: {response.status_code})")
+                    print(f"Response: {response.text}")
+                    perform_local_revoke()
+                
+                elif response.status_code == 200:
+                    # อัปเดตเวลาที่ Sync ล่าสุดลงฐานข้อมูลตัวเอง
+                    device.last_sync = datetime.now(timezone.utc)
+                    session.add(device)
+                    session.commit()
+                    # print(f"✅ Heartbeat OK: {device.device_id}")
+            else:
+                pass
+
+    except requests.exceptions.ConnectionError as ce:
+        print(f"📡 Heartbeat Connection Error: Cannot connect to {CLOUD_SERVER_URL}")
+
+    except Exception as e:
+        print(f"📡 Heartbeat Agent Error: {e}")
+            
+def heartbeat_agent():
+    """
+    Agent ทำงานเบื้องหลัง คอยตรวจสอบสถานะกับ Server
+    จะถูกเรียกทำงานเพียงครั้งเดียวเมื่อ Service เริ่มต้น
+    """
+    print("🚀 Heartbeat Agent Started...")
+
+    time.sleep(5)
+
+    session_http = requests.Session()
+
+    while True:
+        try:
+            with Session(engine) as session:
+                device = session.exec(select(DeviceInfo)).first()
+                
+                if device and device.api_token_encrypted:
+                    # ถอดรหัส api_token ก่อนส่งไป
+                    decrypted_token = decrypt_data(device.api_token_encrypted)
+                    # เตรียมข้อมูลส่งไปเช็คสถานะที่ Cloud Server
+                    headers = {
+                        "locker_id": device.locker_id,
+                        "api_token": f"Bearer {decrypted_token}"
+                    }
+                    
+                    # ยิงไปที่ Endpoint สำหรับเช็คสถานะ (ที่ฝั่ง Express.js เตรียมไว้)
+                    response = requests.post(
+                        f"{CLOUD_SERVER_URL}/locker/heartbeat",
+                        headers=headers,
+                        timeout=15
+                    )
+
+                    # ถ้า Server ตอบกลับว่า 403 (Forbidden) หรือ 401 (Unauthorized)
+                    # แสดงว่าตู้ถูกถอดสิทธิ์ หรือ Token ไม่ถูกต้องแล้ว
+                    if response.status_code in [401, 403]:
+                        print(f"❌ Revoke detected (Status: {response.status_code})")
+                        print(f"Response: {response.text}")
+                        perform_local_revoke()
+                    
+                    elif response.status_code == 200:
+                        # อัปเดตเวลาที่ Sync ล่าสุดลงฐานข้อมูลตัวเอง
+                        device.last_sync = datetime.now(timezone.utc)
+                        session.add(device)
+                        session.commit()
+                        # print(f"✅ Heartbeat OK: {device.device_id}")
+                else:
+                    pass
+
+        except Exception as e:
+            print(f"📡 Heartbeat Agent Error: {e}")
+
+        # รอ 60 วินาทีก่อนเช็คครั้งถัดไป (ปรับจูนความเร็วได้ที่นี่)
+        time.sleep(60)
+
+# --- API Endpoints ---
+@router.post("/heartbeat/trigger")
+async def trigger_heartbeat(background_tasks: BackgroundTasks):
+    """
+    Endpoint สำหรับสั่งยิง Heartbeat ทันที (Manual Trigger)
+    เรียกผ่าน Gateway: POST /api/identity/device/heartbeat/trigger
+    """
+    background_tasks.add_task(run_heartbeat_agent)
+    return {"message": "Heartbeat trigger initiated in background"}
 
 @router.post("/activate", response_model=DeviceInfoPublic)
 def activate_device(activation_data: DeviceActivationRequest, session: SessionDep):
@@ -42,10 +195,13 @@ def activate_device(activation_data: DeviceActivationRequest, session: SessionDe
         raise HTTPException(status_code=503, detail=detail)
     
     existing_device = session.exec(select(DeviceInfo)).first()
+    
+    # เข้ารหัส api_token ก่อนบันทึกลงฐานข้อมูล
+    encrypted_token = encrypt_data(cloud_data["data"]["api_token"])
 
     if existing_device:
-        existing_device.device_id = cloud_data["data"]["locker_id"]
-        existing_device.api_token_encrypted = cloud_data["data"]["api_token"]
+        existing_device.locker_id = cloud_data["data"]["locker_id"]
+        existing_device.api_token_encrypted = encrypted_token
         existing_device.locker_location_detail = cloud_data["data"]["locker_location_detail"]
         existing_device.last_sync = datetime.now(timezone.utc)
         session.add(existing_device)
@@ -54,8 +210,8 @@ def activate_device(activation_data: DeviceActivationRequest, session: SessionDe
         return existing_device
     else:
         new_device = DeviceInfo(
-            device_id=cloud_data["data"]["locker_id"],
-            api_token_encrypted=cloud_data["data"]["api_token"],
+            locker_id=cloud_data["data"]["locker_id"],
+            api_token_encrypted=encrypted_token,
             locker_location_detail=cloud_data["data"]["locker_location_detail"],
             is_active=True
         )
@@ -70,4 +226,12 @@ def get_device_info(session: SessionDep):
     device = session.exec(select(DeviceInfo)).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not activated yet")
+    
+    # ถอดรหัส api_token ก่อนส่ง
+    if device.api_token_encrypted:
+        device.api_token_encrypted = decrypt_data(device.api_token_encrypted)
+    
     return device
+
+heartbeat_thread = threading.Thread(target=heartbeat_agent, daemon=True)
+heartbeat_thread.start()

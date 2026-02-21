@@ -1,0 +1,110 @@
+#: import get_color_from_hex kivy.utils.get_color_from_hex
+#: set LIGHT_BG get_color_from_hex("#F7F8FC")
+#  Primary Blue   : #1565C0      Success Green : #2E7D32
+#  Light Blue BG  : #E3F2FD      Warning Amber : #F57F17
+#  Surface White  : #FFFFFF      Danger Red    : #C62828
+#  On-Surface     : #212121      Subtitle Gray : #757575
+
+<ProvisionScreen@MDScreen>:
+    name: "provision_screen"
+    md_bg_color: LIGHT_BG
+
+    provision_code_input: _provision_code_input
+
+    MDBoxLayout:
+        orientation: "vertical"
+        md_bg_color: get_color_from_hex("#E3F2FD")
+
+        # ส่วน ScrollView
+        ScrollView:
+            do_scroll_x: False
+            
+            # ใช้ AnchorLayout เพื่อดึงทุกอย่างให้อยู่กลางจอ
+            AnchorLayout:
+                anchor_x: "center"
+                anchor_y: "center"
+                size_hint_y: None
+                height: root.height # ให้สูงเท่าหน้าจอเพื่อให้จัดกลางแนวตั้งได้
+
+                MDCard:
+                    orientation: "vertical"
+                    padding: [dp(16), dp(20), dp(16), dp(24)]
+                    spacing: dp(12)
+                    size_hint: 0.85, None # ปรับความกว้าง 85% ของจอ
+                    adaptive_height: True # สูงตามเนื้อหาข้างใน
+                    radius: [dp(16)]
+                    md_bg_color: get_color_from_hex("#FFFFFF")
+                    elevation: 2
+                    pos_hint: {"center_x": .5, "center_y": .5}
+
+                    # --- เนื้อหาภายใน Card ---
+                    
+                    # 1. ส่วน Header (Icon & Title)
+                    MDBoxLayout:
+                        orientation: "vertical"
+                        adaptive_height: True
+                        spacing: dp(8)
+
+                        MDIcon:
+                            icon: "lock-outline"
+                            font_size: "64sp"
+                            halign: "center"
+                            theme_text_color: "Custom"
+                            text_color: get_color_from_hex("#1565C0")
+                            pos_hint: {"center_x": .5}
+
+                        MDLabel:
+                            text: "Locker Registration"
+                            font_style: "H6"
+                            bold: True
+                            halign: "center"
+                            adaptive_height: True
+
+                        MDLabel:
+                            text: "Controlled Medication System"
+                            font_style: "Body2"
+                            halign: "center"
+                            theme_text_color: "Secondary"
+                            adaptive_height: True
+
+                    # 2. ส่วนกรอกรหัส (Form)
+                    MDBoxLayout:
+                        orientation: "vertical"
+                        adaptive_height: True
+                        spacing: dp(10)
+                        padding: [0, dp(10)]
+
+                        MDTextField:
+                            id: _provision_code_input
+                            hint_text: "Registration Code"
+                            mode: "rectangle"
+                            on_text_validate: root.on_provision_code_submitted()
+
+                        MDProgressBar:
+                            id: registration_progress
+                            value: 0
+                            size_hint_y: None
+                            height: dp(4)
+
+                    # 3. ปุ่มกด
+                    MDRaisedButton:
+                        text: "REGISTER NOW"
+                        size_hint_x: 1
+                        height: dp(48)
+                        on_release: root.submit_registration()
+
+                    # 4. หมายเหตุ (Note)
+                    MDBoxLayout:
+                        adaptive_height: True
+                        padding: dp(16)
+                        spacing: dp(16)
+                        md_bg_color: get_color_from_hex("#FFFDE7")
+                        radius: [dp(8)]
+                        
+                        MDLabel:
+                            text: "[b]Note:[/b] This can only be done once."
+                            markup: True
+                            font_style: "Caption"
+                            halign: "center"
+                            theme_text_color: "Custom"
+                            text_color: get_color_from_hex("#795548")

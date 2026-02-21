@@ -28,6 +28,7 @@ KV_FILES = [
     "screen/home_screen.kv",
     "screen/dispense_screen.kv",
     "screen/restock_screen.kv",
+    "screen/provision_screen.kv",
 ]
 
 screen_helper = """
@@ -41,6 +42,7 @@ MDScreenManager:
     HomeScreen:
     RestockScreen:
     DispenseScreen:
+    ProvisionScreen:
 """
 
 class SmartLockerApp(MDApp):

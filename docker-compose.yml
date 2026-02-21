@@ -10,9 +10,11 @@ services:
     volumes:
       # เชื่อมโค้ดจากโฟลเดอร์ย่อยเข้ากับ Container
       - ./display_service:/display_service
+      - ./secret:/display_service/secret:ro
     environment:
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
+      - SERVER_URL=${SERVER_URL}
     restart: always
     networks:
       - smart-locker-network
@@ -30,6 +32,7 @@ services:
       - ./device_identity_service:/device_identity_service
       # เชื่อมฐานข้อมูลให้อยู่ในโฟลเดอร์ database ของ Service นั้นๆ
       - ./device_identity_service/database:/device_identity_service/database
+      - ./secret:/device_identity_service/secret:ro
     environment:
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
@@ -51,9 +54,11 @@ services:
       - ./local_auth_service:/local_auth_service
       # เชื่อมฐานข้อมูลให้อยู่ในโฟลเดอร์ database ของ Service นั้นๆ
       - ./local_auth_service/database:/local_auth_service/database
+      - ./secret:/local_auth_service/secret:ro
     environment:
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
+      - SERVER_URL=${SERVER_URL}
     restart: always
     networks:
       - smart-locker-network
