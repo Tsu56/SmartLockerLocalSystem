@@ -22,26 +22,6 @@ class ProductPublic(ProductBase):
     updated_at: datetime | None = None
     deleted_at: datetime | None = None
 
-# --- Slot Schemas ---
-class SlotBase(SQLModel):
-    slot_id: int = Field(index=True, unique=True, description="ID ของช่อง Slot ในฝั่ง Server")
-    locker_id: int = Field(description="ID ของตู้ที่เป็นเจ้าของช่องนี้")
-    slot_status: Optional[str] = Field(default="active", description="สถานะของช่อง เช่น active, maintenance")
-    capacity: Optional[int] = Field(default=0, description="ความจุสูงสุดของช่อง")
-
-class SlotCreate(SlotBase):
-    pass
-
-class SlotUpdate(SQLModel):
-    slot_status: Optional[str] = None
-    capacity: Optional[int] = None
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-class SlotPublic(SlotBase):
-    id: int
-    created_at: datetime
-    updated_at: Optional[datetime] = None
-
 # --- Slot Stock Schemas ---
 class SlotStockBase(SQLModel):
     slot_stock_id: int = Field(index=True, unique=True, description="ID ของ Stock Record จาก Server")

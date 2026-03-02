@@ -13,19 +13,19 @@ from getkey import get_internal_shared_secret
 load_dotenv()
 
 CLOUD_SERVER_URL = os.getenv("SERVER_URL", "http://localhost:3000/api")
-IDENTITY_SERVICE_URL = "http://device-identity-service:8000/device/internal/auth-headers"
+DEVICE_SERVICE_URL = "http://device-identity-service:8000/device/internal/auth-headers"
 INTERNAL_SECRET = get_internal_shared_secret()
 
 def get_cloud_auth_headers():
     """ดึง Auth Headers จาก Identity Service"""
     try:
         headers = {"X-Internal-Secret": INTERNAL_SECRET}
-        response = requests.get(IDENTITY_SERVICE_URL, headers=headers, timeout=5)
+        response = requests.get(DEVICE_SERVICE_URL, headers=headers, timeout=5)
         if response.status_code == 200:
             return response.json()
         return None
     except Exception as e:
-        print(f"📡 [Product Sync] Identity Service Connection Error: {e}")
+        print(f"📡 [Product Sync] Device Service Connection Error: {e}")
         return None
 
 def perform_product_sync():

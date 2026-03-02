@@ -2,11 +2,19 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 from typing import List
 from datetime import datetime, timezone
+import requests
+import os
+from dotenv import load_dotenv
 
 # นำเข้า models และ schema ที่เราสร้างไว้
 from database import get_session, models, schema
+from getkey import get_internal_shared_secret
 
 from product_sync_agent import perform_product_sync
+
+load_dotenv()
+INTERNAL_SHARED_SECRET = get_internal_shared_secret()
+DEVICE_SERVICE_URL = "http://device-identity-service:8000"
 
 router = APIRouter(prefix="/locker", tags=["Locker Operations"])
 
@@ -20,13 +28,35 @@ def get_slots_with_stock(session: Session = Depends(get_session)):
     ดึงข้อมูลช่องทั้งหมด พร้อมกับสต็อกสินค้าและชื่อสินค้าที่อยู่ข้างใน
     ใช้สำหรับแสดงผลในหน้า DispenseScreen / RestockScreen
     """
-    slots = session.exec(select(models.Slot)).all()
-    result = []
+    # ดึงข้อมูล Slot จาก device_identity_service
+    try:
+        headers = {"X-Internal-Secret": INTERNAL_SHARED_SECRET}
+        response = requests.get(
+            f"{DEVICE_SERVICE_URL}/device/internal/slots",
+            headers=headers,
+            timeout=10
+        )
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail="Failed to fetch slots from device service"
+            )
+        slots = response.json()
+    except requests.RequestException as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error connecting to device service: {str(e)}"
+        )
     
+    result = []
     for slot in slots:
         stocks_data = []
-        # ดึงสต็อกที่อยู่ในช่องนี้ (ใช้ Relationship ที่กำหนดไว้ใน models.py)
-        for stock in slot.slot_stocks:
+        # ดึงสต็อกที่อยู่ในช่องนี้
+        stocks = session.exec(
+            select(models.SlotStock).where(models.SlotStock.slot_id == slot["slot_id"])
+        ).all()
+        
+        for stock in stocks:
             stocks_data.append({
                 "slot_stock_id": stock.slot_stock_id,
                 "lot_id": stock.lot_id,
@@ -36,9 +66,9 @@ def get_slots_with_stock(session: Session = Depends(get_session)):
             })
             
         result.append({
-            "slot_id": slot.slot_id,
-            "slot_status": slot.slot_status,
-            "capacity": slot.capacity,
+            "slot_id": slot["slot_id"],
+            "slot_status": slot["slot_status"],
+            "capacity": slot["capacity"],
             "stocks": stocks_data
         })
         
@@ -97,10 +127,26 @@ def add_transaction_detail(
         stock.amount -= detail.amount
         
     elif transaction.activity == "restock":
-        # (Optional) ตรวจสอบ Capacity ของช่อง
-        slot = session.get(models.Slot, detail.slot_id)
-        if slot and slot.capacity < (stock.amount + detail.amount):
-            raise HTTPException(status_code=400, detail="Amount exceeds slot capacity")
+        # (Optional) ตรวจสอบ Capacity ของช่องจาก device_identity_service
+        try:
+            headers = {"X-Internal-Secret": INTERNAL_SHARED_SECRET}
+            response = requests.get(
+                f"{DEVICE_SERVICE_URL}/device/internal/slots",
+                headers=headers,
+                timeout=10
+            )
+            if response.status_code == 200:
+                slots = response.json()
+                slot_data = next((s for s in slots if s["slot_id"] == detail.slot_id), None)
+                if slot_data and slot_data.get("capacity") < (stock.amount + detail.amount):
+                    raise HTTPException(
+                        status_code=400, 
+                        detail=f"Amount exceeds slot capacity ({slot_data.get('capacity')})"
+                    )
+        except requests.RequestException:
+            # ถ้าไม่สามารถเชื่อมต่อ device_identity_service ให้ข้ามการตรวจสอบ capacity
+            pass
+        
         stock.amount += detail.amount
 
     # 4. บันทึกข้อมูล Detail และอัปเดต Stock

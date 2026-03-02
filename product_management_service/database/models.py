@@ -1,5 +1,5 @@
 from database import (
-    ProductBase, SlotBase, SlotStockBase, 
+    ProductBase, SlotStockBase, 
     TransactionBase, TransactionDetailBase, SnapshotBase
 )
 from sqlmodel import SQLModel, Field, Relationship
@@ -26,22 +26,6 @@ class Product(ProductBase, table=True):
     slot_stocks: List["SlotStock"] = Relationship(back_populates="product")
 
 
-class Slot(SlotBase, table=True):
-    """ข้อมูลช่อง: ใช้ slot_id (int) จาก Server เป็น PK"""
-    __tablename__ = "slot"
-
-    id: Optional[int] = Field(default=None, primary_key=True, description="ID Local Auto-increment")
-    locker_id: int = Field(index=True, description="ID ของตู้ที่เป็นเจ้าของช่องนี้")
-    slot_status: Optional[str] = Field(default="active", max_length=45, description="สถานะของช่อง เช่น active, maintenance") 
-    capacity: Optional[int] = Field(default=0, description="ความจุสูงสุดของช่อง")
-    
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-    deleted_at: Optional[datetime] = None
-
-    slot_stocks: List["SlotStock"] = Relationship(back_populates="slot")
-
-
 class SlotStock(SlotStockBase, table=True):
     """ข้อมูลสต็อก: ใช้ slot_stock_id (int) จาก Server เป็น PK"""
     __tablename__ = "slot_stock"
@@ -61,7 +45,6 @@ class SlotStock(SlotStockBase, table=True):
     deleted_at: Optional[datetime] = None
 
     product: Optional[Product] = Relationship(back_populates="slot_stocks")
-    slot: Optional[Slot] = Relationship(back_populates="slot_stocks")
     transaction_details: List["TransactionDetail"] = Relationship(back_populates="slot_stock")
 
 

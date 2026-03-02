@@ -6,14 +6,16 @@ import time
 from fastapi import APIRouter, HTTPException, status, Header, BackgroundTasks
 from sqlmodel import select, delete
 from datetime import datetime, timezone
+from typing import List
 
 from database import SessionDep, engine, Session
-from database.models import DeviceInfo
+from database.models import DeviceInfo, Slot
 from database.schema import (
     DeviceInfoCreate, 
     DeviceInfoPublic, 
     DeviceInfoUpdate, 
-    DeviceActivationRequest
+    DeviceActivationRequest,
+    SlotPublic
 )
 from encryption import encrypt_data, decrypt_data
 from getkey import get_internal_shared_secret
@@ -54,6 +56,34 @@ def get_internal_auth_headers(x_internal_secret: str = Header(None, alias="X-Int
             }
         except Exception as e:
             raise HTTPException(status_code=500, detail="Decryption failed")
+
+@router.get("/internal/slots", response_model=List[dict])
+def get_all_slots(x_internal_secret: str = Header(None, alias="X-Internal-Secret")):
+    """
+    Endpoint สำหรับให้ Service ภายในตู้ (เช่น product_management_service) 
+    มาดึงข้อมูลช่อง (Slot) ทั้งหมด
+    """
+    # 1. ตรวจสอบรหัสลับภายใน
+    if not x_internal_secret or x_internal_secret != INTERNAL_SHARED_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Access Denied: Invalid internal secret"
+        )
+
+    with Session(engine) as session:
+        slots = session.exec(select(Slot)).all()
+        return [
+            {
+                "slot_id": slot.slot_id,
+                "locker_id": slot.locker_id,
+                "slot_status": slot.slot_status,
+                "capacity": slot.capacity,
+                "id": slot.id,
+                "created_at": slot.created_at,
+                "updated_at": slot.updated_at
+            }
+            for slot in slots
+        ]
 
 def perform_local_revoke():
     """ลบข้อมูลตัวตนในเครื่องทิ้ง เมื่อ Server สั่ง Revoke"""
