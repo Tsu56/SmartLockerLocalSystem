@@ -35,7 +35,7 @@ class SlotStock(SlotStockBase, table=True):
     lot_id: str = Field(max_length=45, index=True, description="เลขล็อตของสินค้า")
     
     product_id: str = Field(foreign_key="product.product_id", max_length=45, index=True, description="ID ของสินค้าที่อยู่ในสต็อกนี้")
-    slot_id: int = Field(foreign_key="slot.slot_id", index=True, description="ID ของช่องที่เก็บสต็อกนี้")
+    slot_id: int = Field(index=True, description="ID ของช่องที่เก็บสต็อกนี้ (FK to device_identity_service.slot)")
     
     amount: int = Field(default=0, description="จำนวนสินค้าที่มีอยู่")
     expired_at: Optional[date] = Field(default=None, description="วันหมดอายุของล็อตนี้")

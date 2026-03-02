@@ -5,7 +5,7 @@ from typing import Optional
 # --- Slot Schemas ---
 class SlotBase(SQLModel):
     slot_id: int = Field(index=True, unique=True, description="ID ของช่อง Slot ในฝั่ง Server")
-    locker_id: int = Field(description="ID ของตู้ที่เป็นเจ้าของช่องนี้")
+    locker_id: str = Field(description="รหัสตู้ที่เป็นเจ้าของช่องนี้ เช่น LKR-001")
     slot_status: Optional[str] = Field(default="active", description="สถานะของช่อง เช่น active, maintenance")
     capacity: Optional[int] = Field(default=0, description="ความจุสูงสุดของช่อง")
 

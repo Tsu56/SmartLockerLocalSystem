@@ -19,6 +19,7 @@ from database.schema import (
 )
 from encryption import encrypt_data, decrypt_data
 from getkey import get_internal_shared_secret
+from slot_sync_agent import run_slot_sync_logic
 
 router = APIRouter(prefix="/device", tags=["Device Identification"])
 
@@ -89,6 +90,7 @@ def perform_local_revoke():
     """ลบข้อมูลตัวตนในเครื่องทิ้ง เมื่อ Server สั่ง Revoke"""
     with Session(engine) as session:
         session.exec(delete(DeviceInfo))
+        session.exec(delete(Slot))
         session.commit()
     print("⚠️  CRITICAL: Device Identity has been revoked and wiped locally.")
 
@@ -262,6 +264,15 @@ def get_device_info(session: SessionDep):
         device.api_token_encrypted = decrypt_data(device.api_token_encrypted)
     
     return device
+
+@router.post("/sync/slots/trigger")
+async def trigger_slot_sync(background_tasks: BackgroundTasks):
+    """
+    Endpoint สำหรับสั่งให้ตู้ทำการ Sync ข้อมูล Slot ทันที (Manual Trigger)
+    เหมาะสำหรับการทดสอบ หรือสั่งการจาก UI
+    """
+    background_tasks.add_task(run_slot_sync_logic)
+    return {"message": "Slot sync process triggered in background"}
 
 heartbeat_thread = threading.Thread(target=heartbeat_agent, daemon=True)
 heartbeat_thread.start()
