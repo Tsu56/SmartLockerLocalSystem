@@ -2,8 +2,9 @@ import os
 from kivymd.app import MDApp
 from kivy.lang import Builder
 from kivymd.toast import toast
-from kivy.properties import StringProperty, ColorProperty, NumericProperty
+from kivy.properties import StringProperty, ColorProperty, NumericProperty, BooleanProperty, DictProperty
 from kivy.core.window import Window
+from kivy.core.text import LabelBase, DEFAULT_FONT
 from kivymd.uix.button import MDRaisedButton, MDTextButton
 from kivymd.uix.textfield import MDTextField
 from controller.id_card_controller import IDCardController, Clock
@@ -14,12 +15,44 @@ from kivy.network.urlrequest import UrlRequest
 
 Window.size = (1024, 600)
 
+
+def setup_default_thai_font():
+    font_candidates = [
+        {
+            "regular": "fonts/NotoSansThai-Regular.ttf",
+            "bold": "fonts/NotoSansThai-Bold.ttf",
+            "italic": "fonts/NotoSansThai-Regular.ttf",
+            "bolditalic": "fonts/NotoSansThai-Bold.ttf",
+        },
+        {
+            "regular": "/usr/share/fonts/truetype/freefont/FreeSerif.ttf",
+            "bold": "/usr/share/fonts/truetype/freefont/FreeSerifBold.ttf",
+            "italic": "/usr/share/fonts/truetype/freefont/FreeSerifItalic.ttf",
+            "bolditalic": "/usr/share/fonts/truetype/freefont/FreeSerifBoldItalic.ttf",
+        },
+    ]
+
+    for font in font_candidates:
+        if os.path.exists(font["regular"]):
+            LabelBase.register(
+                DEFAULT_FONT,
+                fn_regular=font["regular"],
+                fn_bold=font["bold"] if os.path.exists(font["bold"]) else font["regular"],
+                fn_italic=font["italic"] if os.path.exists(font["italic"]) else font["regular"],
+                fn_bolditalic=font["bolditalic"] if os.path.exists(font["bolditalic"]) else font["regular"],
+            )
+            print(f"Using Thai-compatible font: {font['regular']}")
+            return
+
+    print("Warning: Thai-compatible font not found. Please add a Thai font in user_interface/fonts/")
+
 GATEWAY_URL = "http://localhost:5000/api"
 
 AUTH_CARD_URL = f"{GATEWAY_URL}/auth/auth/login/smartcard"
 AUTH_PWD_URL = f"{GATEWAY_URL}/auth/auth/login/password"
 
 DEVICE_ACTIVATE_URL = f"{GATEWAY_URL}/identity/device/activate"
+DEVICE_INFO_URL = f"{GATEWAY_URL}/identity/device/info"
 
 KV_FILES = [
     "screen/main_screen.kv",
@@ -47,18 +80,34 @@ MDScreenManager:
     ProvisionScreen:
 """
 
+class HomeScreen(MDScreen):
+    def on_enter(self):
+        app = MDApp.get_running_app()
+        if app.user_permissions.get("can_withdraw"):
+            self.ids.btn_dispense.disabled = False
+        else:
+            self.ids.btn_dispense.disabled = True
+        if app.user_permissions.get("can_restock"):
+            self.ids.btn_restock.disabled = False
+        else:
+            self.ids.btn_restock.disabled = True
+
 class SmartLockerApp(MDApp):
     current_screen_name = StringProperty("main_screen")
     card_border_color = ColorProperty([0.878, 0.878, 0.878, 1]) # เริ่มต้นที่ Light Gray
     card_border_width = NumericProperty(1)
     card_status_text = StringProperty("Status: Ready for card insertion.")
     card_status_color = ColorProperty([0, 0, 0, 0.6])
+    is_activated = BooleanProperty(False)
+    user_id = StringProperty("")
+    user_permissions = DictProperty({"can_withdraw": False, "can_restock": False})
 
     status_error_color = [0.906, 0.298, 0.235, 1]      # Red
     status_success_color = [0.18, 0.8, 0.443, 1]    # Green
     status_ready_color = [0.878, 0.878, 0.878, 1]    # Light Gray
 
     def build(self):
+        setup_default_thai_font()
         self.theme_cls.theme_style = "Light"
         self.theme_cls.primary_palette = "Blue"
 
@@ -78,6 +127,8 @@ class SmartLockerApp(MDApp):
         self.id_card_controller.bind(is_card_detected=self._sync_card_ui)
         self.id_card_controller.bind(status_text=self._sync_text_ui)
         self.id_card_controller.bind(error_msg=self._sync_error_ui)
+
+        Clock.schedule_once(lambda dt: self.check_device_status(), 0.1)
 
         Clock.schedule_interval(self._poll_card_reader, 0.5)
 
@@ -194,7 +245,10 @@ class SmartLockerApp(MDApp):
 
     def _on_login_success(self, request, result):
         """กรณี Login สำเร็จ (HTTP 200)"""
-        print(f"DEBUG: Raw Success Result: {result}")
+        user_data = result.get("user", {})
+
+        self.user_id = user_data.get("user_id", "")
+        self.user_permissions = user_data.get("permissions", {"can_withdraw": False, "can_restock": False})
 
         # ตรวจสอบโครงสร้างข้อมูล (รองรับทั้งแบบมีคีย์ 'user' ครอบ และแบบส่ง object มาตรงๆ)
         if isinstance(result, dict):
@@ -235,6 +289,49 @@ class SmartLockerApp(MDApp):
         self.show_toast("Network Error: Cannot connect to Auth Service")
         print(f"DEBUG: Connection Error - {error}")
 
+    def check_device_status(self, dt=None):
+        """ยิง API ไปเช็คที่ Local Backend ว่าตู้ยังมีสิทธิ์อยู่หรือไม่"""
+        UrlRequest(
+            DEVICE_INFO_URL,
+            on_success=self._on_device_status_success,
+            on_failure=self._on_device_status_failed,
+            on_error=self._on_device_status_error,
+            timeout=3
+        )
+
+    def _on_device_status_success(self, request, result):
+        """ถ้าตู้ปกติ (HTTP 200) ไม่ต้องทำอะไร ปล่อยให้ใช้งานต่อ"""
+        self.is_activated = result.get("is_active", True)
+        # (Optional) ถ้าปัจจุบันอยู่หน้า provision_screen แต่ตู้ Activate แล้ว ให้เด้งกลับ main_screen
+        if self.current_screen_name == "provision_screen":
+            self.change_screen("main_screen")
+
+    def _on_device_status_failed(self, request, result):
+        """ถ้า Local Backend ตอบกลับมาเป็น 4xx (เช่น 404 Device not activated)"""
+        # ถ้าไม่ได้อยู่หน้า provision_screen ให้เตะส่งไปหน้านั้นทันที
+        if self.current_screen_name != "provision_screen":
+            print("🔒 Device Revoked or Not Activated! Redirecting to provision_screen...")
+            self.change_screen("provision_screen")
+            self.show_toast("เครื่องนี้ยังไม่ได้ลงทะเบียน หรือถูกยกเลิกสิทธิ์แล้ว")
+
+    def _on_device_status_error(self, request, error):
+        """ถ้าเชื่อมต่อ Local Backend ไม่ได้ (เช่น Docker ดับ)"""
+        # ตรงนี้ไม่ต้องเตะไปหน้า provision เพราะอาจจะแค่เน็ตเวิร์คกระตุก
+        # ให้รอเช็ครอบถัดไป หรืออาจจะทำเป็นไอคอนแจ้งเตือน Offline
+        pass
+
+    def enforce_device_activation(self):
+        """ฟังก์ชันกลางสำหรับเช็คว่าถ้าตู้ไม่ active ให้เด้งไปหน้าลงทะเบียนทันที"""
+        print(f"Device Activation Status: {self.is_activated}")
+        
+        if not self.is_activated:
+            print("🚨 Alert: Access denied. Device is not activated.")
+            if self.current_screen_name != "provision_screen":
+                self.change_screen("provision_screen")
+                self.show_toast("เครื่องยังไม่ได้ลงทะเบียน หรือถูกระงับการใช้งาน")
+                return False
+        return True
+
     def go_to_dispense(self):
         print("Navigating to Dispense Mode")
         # เตรียม Logic สำหรับเปลี่ยนหน้าไปหน้าเบิกของ
@@ -249,6 +346,8 @@ class SmartLockerApp(MDApp):
     def logout(self):
         print("Logging out...")
         # เคลียร์ค่าต่างๆ ถ้าจำเป็น
+        self.user_id = ""
+        self.user_permissions = {"can_withdraw": False, "can_restock": False}
         self.change_screen("main_screen")
         self.show_toast("ออกจากระบบเรียบร้อยแล้ว")
     

@@ -1,10 +1,11 @@
 from dotenv import load_dotenv
 import httpx, os, threading, time, requests, hashlib
-from fastapi import APIRouter, BackgroundTasks, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, status, Header
 from sqlmodel import select, delete, func, or_, update
 from typing import List
 from datetime import datetime, timezone
 from passlib.context import CryptContext
+import re
 
 load_dotenv()
 
@@ -247,9 +248,12 @@ async def trigger_sync(background_tasks: BackgroundTasks):
 
 @router.post("/login/password")
 def login_with_password(login_data: UserLogin, session: SessionDep):
-    """เข้าสู่ระบบด้วย UserID, Email หรือ CitizenID และ Password"""
+    """เข้าสู่ระบบด้วย Email หรือ CitizenID และ Password"""
     identifier = login_data.username.strip()
-    
+    search_hash = ""
+    is_email = re.match(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", identifier)
+    is_citizen_id = re.match(r"^\d{13}$", identifier)
+
     # สร้าง Hash สำหรับใช้ค้นหาใน SQL
     search_hash = get_search_hash(identifier)
     
@@ -277,7 +281,12 @@ def login_with_password(login_data: UserLogin, session: SessionDep):
     permission = session.exec(perm_stmt).first()
     
     # บันทึก Log สำเร็จ
-    log = AuthLog(user_id=user.user_id, username=user.first_name, login_method="password", status="success")
+    if is_email:
+        log = AuthLog(user_id=user.user_id, username=user.email, login_method="password", status="success")
+    elif is_citizen_id:
+        log = AuthLog(user_id=user.user_id, username=f"CitizenID:{identifier[-4:]}", login_method="password", status="success")
+    else:
+        log = AuthLog(user_id=user.user_id, username=identifier, login_method="password", status="success")
     session.add(log)
     session.commit()
     
@@ -320,7 +329,7 @@ def login_with_smartcard(login_in: SmartCardLogin, session: SessionDep):
     permission = session.exec(perm_stmt).first()
 
     # บันทึก Log สำเร็จ
-    log = AuthLog(user_id=user.user_id, username=user.first_name, login_method="smartcard", status="success")
+    log = AuthLog(user_id=user.user_id, username=f"CitizenID:{raw_citizen_id[-4:]}", login_method="smartcard", status="success")
     session.add(log)
     session.commit()
     
@@ -334,6 +343,49 @@ def login_with_smartcard(login_in: SmartCardLogin, session: SessionDep):
                 "can_restock": bool(permission.permission_restock) if permission else False
             }
         }
+    }
+
+# --- [NEW] API สำหรับเช็คสิทธิ์ผู้ใช้ ---
+
+@router.get("/permissions/{user_id}")
+async def get_user_permissions(
+    user_id: str, 
+    session: SessionDep,
+    x_internal_secret: str = Header(None, alias="X-Internal-Secret") # เพิ่มการเช็ค Header
+):
+    """
+    ตรวจสอบสิทธิ์ของผู้ใช้รายบุคคล
+    ใช้สำหรับให้ Service อื่นๆ หรือ UI มาถามว่า User คนนี้ทำอะไรได้บ้าง
+    """
+    # ตรวจสอบ Header ลับก่อนเข้าถึงข้อมูล
+    if x_internal_secret != INTERNAL_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized internal call")
+    
+    # 1. ค้นหาสิทธิ์จากตาราง UserPermission
+    statement = select(UserPermission).where(
+        UserPermission.user_id == user_id,
+        UserPermission.deleted_at == None
+    )
+    permission = session.exec(statement).first()
+
+    if not permission:
+        # หากไม่เจอบันทึกสิทธิ์ ให้ถือว่าเป็นผู้ใช้ทั่วไปที่ไม่มีสิทธิ์พิเศษ
+        return {
+            "user_id": user_id,
+            "permissions": {
+                "can_withdraw": 0,
+                "can_restock": 0
+            },
+            "status": "default_restricted"
+        }
+
+    return {
+        "user_id": user_id,
+        "permissions": {
+            "can_withdraw": permission.permission_withdraw,
+            "can_restock": permission.permission_restock
+        },
+        "status": "active"
     }
 
 sync_thread = threading.Thread(target=user_sync_agent, daemon=True)

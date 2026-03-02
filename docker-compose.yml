@@ -63,6 +63,28 @@ services:
     networks:
       - smart-locker-network
 
+  product-management-service:
+    # ระบุตำแหน่งโฟลเดอร์ที่มี Dockerfile อยู่
+    build: 
+      context: ./product_management_service
+      dockerfile: Dockerfile
+    container_name: product_management_service
+    ports:
+      - "5003:8000"
+    volumes:
+      # เชื่อมโค้ดจากโฟลเดอร์ย่อยเข้ากับ Container
+      - ./product_management_service:/product_management_service
+      # เชื่อมฐานข้อมูลให้อยู่ในโฟลเดอร์ database ของ Service นั้นๆ
+      - ./product_management_service/database:/product_management_service/database
+      - ./secret:/product_management_service/secret:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      - SERVER_URL=${SERVER_URL}
+    restart: always
+    networks:
+      - smart-locker-network
+
   # ตัวอย่าง: หากในอนาคตคุณเพิ่ม Service อื่นๆ
   # locker-controller:
   #   build: ./locker_controller_service

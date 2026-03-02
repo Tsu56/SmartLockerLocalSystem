@@ -1,0 +1,5 @@
+.dockerignore
+Dockerfile
+__pycache__/
+product_management_service_venv/
+database/

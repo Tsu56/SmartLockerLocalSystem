@@ -1,12 +1,12 @@
-#restock_screen.kv
 #: import get_color_from_hex kivy.utils.get_color_from_hex
-#: import GridLayout kivy.uix.gridlayout.GridLayout
-# กำหนดชุดสีที่ใช้ (Color Palette)
-#: set LIGHT_BG get_color_from_hex("#F7F8FC")
-#: set DISPENSE_COLOR get_color_from_hex("#3498DB")  # สีฟ้า
-#: set RESTOCK_COLOR get_color_from_hex("#27AE60")   # สีเขียว
-#: set TEXT_COLOR get_color_from_hex("#2C3E50")
 
+#: set LIGHT_BG get_color_from_hex("#EEF3FF")
+#: set CARD_BG get_color_from_hex("#FFFFFF")
+#: set SOFT_HEADER get_color_from_hex("#E4ECFA")
+#: set CART_HEADER get_color_from_hex("#E5F6EC")
+#: set PRIMARY_BLUE get_color_from_hex("#2563EB")
+#: set DARK_BUTTON get_color_from_hex("#020826")
+#: set BORDER get_color_from_hex("#E5E7EB")
 
 <RestockScreen>:
     name: "restock_screen"
@@ -14,213 +14,287 @@
 
     MDBoxLayout:
         orientation: "horizontal"
-        padding: "16dp"
-        spacing: "16dp"
+        padding: "14dp"
+        spacing: "14dp"
 
-        MDIconButton:
-            icon: "close"
-            pos_hint:{"top": 1}
-            size_hint_x: 0.05
-            on_release: app.change_screen("home_screen")
-
-        # --- ฝั่งซ้าย: ตารางรายการยา (DataTable Container) ---
         MDCard:
-            size_hint_x: 0.95
-            elevation: 1
-            padding: "8dp"
-            radius: [12, ]
-            orientation: "vertical"
-            
-            MDLabel:
-                text: " Medicine List"
-                font_style: "H6"
-                size_hint_y: None
-                height: "48dp"
-                bold: True
-
-            # เราจะนำ MDDataTable มาใส่ใน Box นี้ผ่าน Python
-            BoxLayout:
-                id: table_container
-
-        # --- ฝั่งขวา: ตะกร้าสินค้า (Cart Sidebar) ---
-        MDCard:
-            size_hint_x: 0.35
+            size_hint_x: 0.68
+            radius: [14, 14, 14, 14]
             elevation: 2
-            radius: [12, ]
+            md_bg_color: CARD_BG
             orientation: "vertical"
-            padding: "16dp"
-            md_bg_color: 1, 1, 1, 1
 
-            # Header ตะกร้า
             MDBoxLayout:
                 size_hint_y: None
-                height: "40dp"
-                spacing: "8dp"
-                MDIcon:
-                    icon: "cart-outline"
-                    theme_text_color: "Primary"
+                height: "64dp"
+                padding: "14dp"
+                spacing: "10dp"
+                md_bg_color: SOFT_HEADER
+
+                MDCard:
+                    size_hint: None, None
+                    size: "32dp", "32dp"
+                    radius: [10, 10, 10, 10]
+                    elevation: 0
+                    md_bg_color: PRIMARY_BLUE
+
                 MDLabel:
-                    text: "Cart"
-                    font_style: "Subtitle1"
+                    text: "รายการยา"
+                    font_style: "H6"
                     bold: True
+
+            MDBoxLayout:
+                size_hint_y: None
+                height: "44dp"
+                padding: ["12dp", "0dp", "12dp", "0dp"]
+
                 MDLabel:
-                    id: cart_count_badge
-                    text: "0 list"
+                    text: "รหัสยา"
+                    theme_text_color: "Secondary"
+                    size_hint_x: 0.16
+                MDLabel:
+                    text: "ชื่อยา"
+                    theme_text_color: "Secondary"
+                    size_hint_x: 0.54
+                MDLabel:
+                    text: "การดำเนินการ"
+                    theme_text_color: "Secondary"
                     halign: "right"
-                    font_style: "Caption"
-                    theme_text_color: "Hint"
+                    size_hint_x: 0.30
 
             MDSeparator:
 
-            # พื้นที่รายการในตะกร้า
             ScrollView:
-                MDList:
-                    id: cart_list
-                    spacing: "8dp"
+                do_scroll_x: False
 
-            # ส่วนสรุปและปุ่มยืนยัน
+                MDBoxLayout:
+                    id: medicine_rows
+                    orientation: "vertical"
+                    adaptive_height: True
+
+        MDCard:
+            size_hint_x: 0.32
+            radius: [14, 14, 14, 14]
+            elevation: 2
+            md_bg_color: CARD_BG
+            orientation: "vertical"
+
+            MDBoxLayout:
+                size_hint_y: None
+                height: "64dp"
+                padding: "14dp"
+                spacing: "10dp"
+                md_bg_color: CART_HEADER
+
+                MDCard:
+                    size_hint: None, None
+                    size: "40dp", "40dp"
+                    radius: [12, 12, 12, 12]
+                    elevation: 0
+                    md_bg_color: get_color_from_hex("#0EAD4A")
+
+                    MDIcon:
+                        icon: "cart-outline"
+                        theme_text_color: "Custom"
+                        text_color: 1, 1, 1, 1
+                        halign: "center"
+                        valign: "middle"
+
+                MDLabel:
+                    text: "ตะกร้า"
+                    font_style: "H6"
+                    bold: True
+
+                MDCard:
+                    size_hint: None, None
+                    size: "92dp", "36dp"
+                    radius: [10, 10, 10, 10]
+                    elevation: 0
+                    md_bg_color: get_color_from_hex("#E5E7EB")
+
+                    MDLabel:
+                        id: cart_count_badge
+                        text: "0 รายการ"
+                        halign: "center"
+                        valign: "middle"
+
+            FloatLayout:
+                ScrollView:
+                    do_scroll_x: False
+                    size_hint: 1, 1
+
+                    MDBoxLayout:
+                        id: cart_list
+                        orientation: "vertical"
+                        adaptive_height: True
+                        padding: ["12dp", "10dp", "12dp", "10dp"]
+                        spacing: "10dp"
+
+                MDBoxLayout:
+                    id: cart_empty_state
+                    orientation: "vertical"
+                    spacing: "8dp"
+                    size_hint: 1, 1
+                    padding: ["24dp", "24dp", "24dp", "24dp"]
+
+                    Widget:
+                    MDCard:
+                        size_hint: None, None
+                        size: "86dp", "86dp"
+                        radius: [43, 43, 43, 43]
+                        pos_hint: {"center_x": .5}
+                        elevation: 0
+                        md_bg_color: get_color_from_hex("#F0F2F5")
+
+                        MDIcon:
+                            icon: "cube-outline"
+                            halign: "center"
+                            valign: "middle"
+                            theme_text_color: "Hint"
+                            font_size: "32sp"
+
+                    MDLabel:
+                        text: "ตะกร้าว่างเปล่า"
+                        halign: "center"
+                        font_style: "Subtitle1"
+                        theme_text_color: "Secondary"
+
+                    MDLabel:
+                        text: "เลือกรายการจากฝั่งซ้าย"
+                        halign: "center"
+                        font_style: "Caption"
+                        theme_text_color: "Hint"
+                    Widget:
+
             MDBoxLayout:
                 orientation: "vertical"
                 size_hint_y: None
-                height: "110dp"
-                padding: [0, "12dp", 0, 0]
-                spacing: "8dp"
+                height: "138dp"
+                padding: ["12dp", "8dp", "12dp", "12dp"]
+                spacing: "10dp"
 
                 MDSeparator:
 
-                MDBoxLayout:
-                    MDLabel:
-                        text: "Total:"
-                        theme_text_color: "Secondary"
-                        font_style: "Body2"
-                    MDLabel:
-                        id: total_items_label
-                        text: "0 total"
-                        halign: "right"
-                        bold: True
+                MDCard:
+                    elevation: 0
+                    radius: [10, 10, 10, 10]
+                    md_bg_color: get_color_from_hex("#F8FAFC")
+                    size_hint_y: None
+                    height: "50dp"
+                    padding: ["12dp", "0dp", "12dp", "0dp"]
+
+                    MDBoxLayout:
+                        MDLabel:
+                            text: "ยาทั้งหมด:"
+                            theme_text_color: "Secondary"
+                        MDLabel:
+                            id: total_units_label
+                            text: "0 หน่วย"
+                            halign: "right"
+                            bold: True
 
                 MDRaisedButton:
-                    text: "Confirm Restock"
+                    text: "ยืนยันการเติมยา"
                     icon: "check-circle-outline"
-                    size_hint_x: 1
-                    height: "48dp"
-                    md_bg_color: RESTOCK_COLOR
+                    md_bg_color: DARK_BUTTON
+                    size_hint_y: None
+                    height: "46dp"
                     on_release: root.confirm_selection()
 
-# Component สำหรับ Item ในตะกร้า (ใช้ใน MDList)
+
+<MedicineRowWidget>:
+    size_hint_y: None
+    height: "58dp"
+    padding: ["12dp", "0dp", "12dp", "0dp"]
+
+    MDBoxLayout:
+        size_hint_x: 0.16
+        MDLabel:
+            text: root.med_id
+            bold: True
+            valign: "middle"
+
+    MDBoxLayout:
+        size_hint_x: 0.54
+        MDLabel:
+            text: root.med_name
+            valign: "middle"
+
+    MDBoxLayout:
+        size_hint_x: 0.30
+        padding: ["0dp", "8dp", "0dp", "8dp"]
+
+        MDRaisedButton:
+            text: "เลือก"
+            icon: "plus"
+            pos_hint: {"right": 1, "center_y": .5}
+            md_bg_color: DARK_BUTTON
+            on_release: root.select_callback() if root.select_callback else None
+
+
 <CartItemWidget>:
     size_hint_y: None
-    height: "110dp"
-    padding: "8dp"
-    
+    height: "102dp"
+
     MDCard:
+        radius: [10, 10, 10, 10]
+        elevation: 0
+        line_color: BORDER
+        line_width: 1
+        padding: ["10dp", "8dp", "10dp", "8dp"]
         orientation: "vertical"
-        padding: "16dp"
-        spacing: "15dp"
-        radius: [12, ]
-        elevation: 2
-        md_bg_color: 1, 1, 1, 1
-        
-        # Header Row: ชื่อยา + ปุ่มแก้ไข/ลบ
+        spacing: "6dp"
+
         MDBoxLayout:
-            size_hint_y: 0.5
-            height: "32dp"
-            spacing: "8dp"
-            
+            size_hint_y: None
+            height: "28dp"
+
             MDLabel:
                 text: root.product_name
-                
                 bold: True
-                size_hint_x: 0.7
-                
-            Widget:
-                size_hint_x: 0.1
-                
+
             MDIconButton:
-                icon: "pencil"
+                icon: "delete-outline"
                 theme_text_color: "Custom"
-                text_color: get_color_from_hex("#3498DB")
-                size_hint_x: 0.15
-                pos_hint:{"center_y": 1}
-                on_release: root.edit_callback() if root.edit_callback else None
-                
-            MDIconButton:
-                icon: "trash-can-outline"
-                theme_text_color: "Custom"
-                text_color: get_color_from_hex("#E74C3C")
-                size_hint_x: 0.15
-                pos_hint:{"center_y": 1}
-                size: "40dp", "40dp"
+                text_color: 1, 0, 0, 1
                 on_release: root.delete_callback() if root.delete_callback else None
-        
-        
-        # Info Grid: จัดเป็น 2 แถว x 2 คอลัมน์
-        GridLayout:
-            cols: 2
+
+        MDLabel:
+            text: root.product_id
+            font_style: "Caption"
+            theme_text_color: "Secondary"
             size_hint_y: None
-            height: "44dp"
-            spacing: "12dp"
-            
-            # แถวที่ 1: Medicine ID
-            MDBoxLayout:
-                orientation: "horizontal"
-                spacing: "6dp"
-                size_hint_y: None
-                height: "20dp"
-                
-                MDIcon:
-                    icon: "pill"
-                    size_hint_x: None
-                    width: "20dp"
-                    theme_text_color: "Custom"
-                    text_color: get_color_from_hex("#95A5A6")
-                    
+            height: "18dp"
+
+        MDBoxLayout:
+            size_hint_y: None
+            height: "30dp"
+            spacing: "8dp"
+
+            MDCard:
+                radius: [8, 8, 8, 8]
+                elevation: 0
+                md_bg_color: get_color_from_hex("#F8FAFC")
+                size_hint: None, None
+                size: "52dp", "30dp"
+
                 MDLabel:
-                    text: f"ID: {root.product_id}"
+                    text: f"📦 {root.quantity}"
+                    halign: "center"
+                    valign: "middle"
                     font_style: "Caption"
-                    theme_text_color: "Secondary"
-            
-            # แถวที่ 2: Slot
-            MDBoxLayout:
-                orientation: "horizontal"
-                spacing: "6dp"
-                size_hint_y: None
-                height: "20dp"
-                
-                MDIcon:
-                    icon: "grid"
-                    size_hint_x: None
-                    width: "20dp"
-                    theme_text_color: "Custom"
-                    text_color: get_color_from_hex("#27AE60")
-                    
+
+            MDCard:
+                radius: [8, 8, 8, 8]
+                elevation: 0
+                md_bg_color: PRIMARY_BLUE
+                size_hint: None, None
+                size: "66dp", "30dp"
+
                 MDLabel:
-                    text: f"Slot: {root.slot}"
+                    text: root.slot
+                    halign: "center"
+                    valign: "middle"
                     font_style: "Caption"
                     theme_text_color: "Custom"
-                    text_color: get_color_from_hex("#27AE60")
-                    bold: True
-            
-            # แถวที่ 3: Quantity (ขยายเต็มความกว้าง)
-            MDBoxLayout:
-                orientation: "horizontal"
-                spacing: "6dp"
-                size_hint_y: None
-                height: "20dp"
-                
-                MDIcon:
-                    icon: "package-variant"
-                    size_hint_x: None
-                    width: "20dp"
-                    theme_text_color: "Custom"
-                    text_color: get_color_from_hex("#3498DB")
-                    
-                MDLabel:
-                    text: f"Qty: {root.quantity}"
-                    font_style: "Body2"
-                    theme_text_color: "Custom"
-                    text_color: get_color_from_hex("#3498DB")
-                    bold: True
-            
-            # ช่องว่าง
-            Widget:
+                    text_color: 1, 1, 1, 1

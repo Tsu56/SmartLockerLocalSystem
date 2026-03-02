@@ -49,7 +49,7 @@
                 # --- ปุ่ม เปล่า
                 MDCard:
                     disabled: True
-                    id: btn_dispense
+                    id: btn_blank1
                     padding: "4dp"
                     size_hint: None, None
                     size: "320dp", "200dp"
@@ -70,6 +70,7 @@
                     md_bg_color: get_color_from_hex("#FFFFFF")
                     line_color: 0, 0, 0, 1        # สีขอบ (น้ำเงิน)
                     line_width: dp(0.5)
+                    disabled: True
                     on_release: app.go_to_restock()
 
                     MDBoxLayout:
@@ -109,6 +110,7 @@
                     md_bg_color: get_color_from_hex("#FFFFFF")
                     line_color: 0, 0, 0, 1        # สีขอบ (น้ำเงิน)
                     line_width: dp(0.5)
+                    disabled: True
                     on_release: app.go_to_dispense()
 
                     MDBoxLayout:
@@ -138,7 +140,7 @@
                 # --- ปุ่มเปล่า
                 MDCard:
                     disabled: True
-                    id: btn_dispense
+                    id: btn_blank2
                     padding: "4dp"
                     size_hint: None, None
                     size: "320dp", "200dp"
