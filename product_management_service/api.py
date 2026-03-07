@@ -77,7 +77,7 @@ def get_slots_with_stock(session: Session = Depends(get_session)):
 @router.get("/products", response_model=List[schema.ProductPublic])
 def get_all_products(session: Session = Depends(get_session)):
     """ดึงข้อมูลสินค้าทั้งหมด (Master Data)"""
-    products = session.exec(select(models.Product)).all()
+    products = session.exec(select(models.Product).order_by(models.Product.product_id)).all()
     return products
 
 # ==========================================

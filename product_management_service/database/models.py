@@ -27,11 +27,14 @@ class Product(ProductBase, table=True):
 
 
 class SlotStock(SlotStockBase, table=True):
-    """ข้อมูลสต็อก: ใช้ slot_stock_id (int) จาก Server เป็น PK"""
+    """ข้อมูลสต็อก: ใช้ id auto-increment เป็น PK, slot_stock_id เป็น unique index จาก Server"""
     __tablename__ = "slot_stock"
     
-    # Override เพื่อเพิ่ม primary_key, foreign_key และ max_length
-    slot_stock_id: int = Field(primary_key=True, index=True, unique=True, description="ID ของ Stock Record จาก Server")
+    # Auto-increment primary key
+    id: Optional[int] = Field(default=None, primary_key=True, description="Auto-increment ID")
+    
+    # Override เพื่อเพิ่ม unique index สำหรับ slot_stock_id จาก Server
+    slot_stock_id: int = Field(index=True, unique=True, description="ID ของ Stock Record จาก Server")
     lot_id: str = Field(max_length=45, index=True, description="เลขล็อตของสินค้า")
     
     product_id: str = Field(foreign_key="product.product_id", max_length=45, index=True, description="ID ของสินค้าที่อยู่ในสต็อกนี้")
@@ -85,9 +88,11 @@ class TransactionDetail(TransactionDetailBase, table=True):
     transaction_id: int = Field(foreign_key="transaction.transaction_id", description="ID ของ Transaction หลัก")
     product_id: str = Field(max_length=45, description="ID ของสินค้าที่เบิก/เติม")
     slot_id: int = Field(description="ID ของช่องตู้")
-    slot_stock_id: int = Field(foreign_key="slot_stock.slot_stock_id", description="ID ของสต็อกที่ถูกตัด/เพิ่ม")
     
-    amount: int = Field(default=0, description="จำนวนที่เบิกหรือเติม")
+    # เปลี่ยนให้ slot_stock_id อ้างอิงไปที่ slot_stock.id (primary key ใหม่)
+    slot_stock_id: int = Field(foreign_key="slot_stock.id", description="FK ไปที่ SlotStock.id")
+    
+    amount: int = Field(default=0, description="จำนวนที่เบิกหรือเพิ่ม")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     transaction: Optional[Transaction] = Relationship(back_populates="details")

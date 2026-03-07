@@ -17,7 +17,6 @@ class ProductUpdate(SQLModel):
     updated_at: datetime | None = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class ProductPublic(ProductBase):
-    id: int
     created_at: datetime
     updated_at: datetime | None = None
     deleted_at: datetime | None = None
@@ -63,7 +62,7 @@ class TransactionPublic(TransactionBase):
 class TransactionDetailBase(SQLModel):
     transaction_id: int = Field(description="ID ของ Transaction หลัก")
     product_id: str = Field(description="ID ของสินค้าที่เบิก/เติม")
-    slot_stock_id: int = Field(description="ID ของสต็อกที่ถูกตัด/เพิ่ม")
+    slot_stock_id: int = Field(description="ID ของสต็อกจาก Server (unique index)")
     slot_id: int = Field(description="ID ของช่องตู้")
     amount: int = Field(default=0, description="จำนวนที่เบิกหรือเติม")
 
@@ -79,7 +78,7 @@ class SnapshotBase(SQLModel):
     image_path: Optional[str] = Field(default=None, description="พาร์ทรูปภาพในเครื่อง Local")
     transaction_id: int = Field(description="ID ของ Transaction")
     transaction_detail_id: int = Field(description="ID ของรายละเอียดรายการ")
-    slot_stock_id: int = Field(description="ID ของสต็อกในช่อง")
+    slot_stock_id: int = Field(description="ID ของสต็อกจาก Server (unique index)")
     camera_id: int = Field(description="ID ของกล้องที่ถ่าย")
 
 class SnapshotCreate(SnapshotBase):
@@ -96,6 +95,7 @@ class SnapshotPublic(SnapshotBase):
 
 class StockDetailPublic(SQLModel):
     """ข้อมูลสต็อกที่รวมชื่อสินค้ามาแล้ว เพื่อแสดงผลในหน้าเบิก/เติมของ"""
+    id: int
     slot_stock_id: int
     lot_id: str
     amount: int

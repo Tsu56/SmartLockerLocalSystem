@@ -34,14 +34,24 @@ def setup_default_thai_font():
 
     for font in font_candidates:
         if os.path.exists(font["regular"]):
+            # ลงทะเบียนในชื่อ 'Thai' เพื่อใช้อ้างอิงเฉพาะจุด
             LabelBase.register(
-                DEFAULT_FONT,
+                name="Thai",
                 fn_regular=font["regular"],
                 fn_bold=font["bold"] if os.path.exists(font["bold"]) else font["regular"],
                 fn_italic=font["italic"] if os.path.exists(font["italic"]) else font["regular"],
                 fn_bolditalic=font["bolditalic"] if os.path.exists(font["bolditalic"]) else font["regular"],
             )
-            print(f"Using Thai-compatible font: {font['regular']}")
+            
+            # [CRITICAL] ทับชื่อ 'Roboto' เพื่อให้มีผลกับ MDDialog และ Widget ทั้งหมดของ KivyMD
+            LabelBase.register(
+                name=DEFAULT_FONT,
+                fn_regular=font["regular"],
+                fn_bold=font["bold"] if os.path.exists(font["bold"]) else font["regular"],
+                fn_italic=font["italic"] if os.path.exists(font["italic"]) else font["regular"],
+                fn_bolditalic=font["bolditalic"] if os.path.exists(font["bolditalic"]) else font["regular"],
+            )
+            print(f"✅ Using Thai-compatible font: {font['regular']}")
             return
 
     print("Warning: Thai-compatible font not found. Please add a Thai font in user_interface/fonts/")

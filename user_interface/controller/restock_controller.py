@@ -14,6 +14,10 @@ from kivymd.uix.dialog import MDDialog
 from kivymd.uix.label import MDLabel
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.textfield import MDTextField
+import requests
+
+# URL ของ API Gateway
+API_BASE_URL = "http://localhost:5000/api/product/locker"
 
 
 class MedicineRowWidget(MDBoxLayout):
@@ -88,10 +92,8 @@ class SlotSelectCard(MDCard):
             )
         )
 
-        slot_icon = MDLabel(text="📦", size_hint_x=None, width=dp(24), halign="center")
         header.add_widget(slot_chip)
         header.add_widget(MDLabel())
-        header.add_widget(slot_icon)
 
         if slot_info["products"]:
             top_product = slot_info["products"][0]
@@ -111,28 +113,12 @@ class SlotSelectCard(MDCard):
             text=f"คงเหลือ {top_qty} หน่วย",
             halign="center",
             theme_text_color="Secondary",
-            font_style="Caption",
             size_hint_y=None,
             height=dp(18),
         )
 
-        bar_bg = MDCard(
-            radius=[6],
-            size_hint_y=None,
-            height=dp(10),
-            elevation=0,
-            md_bg_color=(0.88, 0.89, 0.91, 1),
-        )
-        bar_inner = MDCard(
-            radius=[6],
-            size_hint=(ratio, 1),
-            elevation=0,
-            md_bg_color=progress_color,
-        )
-        bar_bg.add_widget(bar_inner)
-
         bottom_row = MDBoxLayout(size_hint_y=None, height=dp(24))
-        bottom_row.add_widget(MDLabel(text="ความจุ", theme_text_color="Secondary", font_style="Caption"))
+        bottom_row.add_widget(MDLabel(text="ความจุ", theme_text_color="Secondary"))
         bottom_row.add_widget(
             MDLabel(
                 text=f"{current_qty}/{capacity}",
@@ -153,7 +139,6 @@ class SlotSelectCard(MDCard):
         self.add_widget(header)
         self.add_widget(name_label)
         self.add_widget(remain_label)
-        self.add_widget(bar_bg)
         self.add_widget(bottom_row)
         self.add_widget(status_badge)
 
@@ -176,29 +161,71 @@ class RestockScreen(MDScreen):
         self.slot_button = None
         self.slot_info_label = None
 
-        self.medicines = [
-            {"id": "MED001", "name": "พาราเซตามอล 500mg"},
-            {"id": "MED002", "name": "แอสไพริน 100mg"},
-            {"id": "MED003", "name": "อมอกซีซิลลิน 500mg"},
-            {"id": "MED004", "name": "เซทิริซีน 10mg"},
-            {"id": "MED005", "name": "โอเมพราโซล 20mg"},
-            {"id": "MED006", "name": "เมทฟอร์มิน 500mg"},
-            {"id": "MED007", "name": "อะม็อกซีซิลลิน/กรดคลาวูลานิก"},
-            {"id": "MED008", "name": "ไอบูโปรเฟน 400mg"},
-        ]
-
-        self.slots_data = [
-            {"slot": 1, "capacity": 50, "products": [{"id": "MED001", "name": "พาราเซตามอล 500mg", "qty": 30}]},
-            {"slot": 2, "capacity": 50, "products": []},
-            {"slot": 3, "capacity": 50, "products": [{"id": "MED003", "name": "อมอกซีซิลลิน 500mg", "qty": 45}]},
-            {"slot": 4, "capacity": 50, "products": [{"id": "MED004", "name": "เซทิริซีน 10mg", "qty": 10}]},
-            {"slot": 5, "capacity": 50, "products": []},
-            {"slot": 6, "capacity": 50, "products": [{"id": "MED008", "name": "ไอบูโปรเฟน 400mg", "qty": 50}]},
-        ]
+        # เริ่มต้นเป็น list ว่าง จะดึงจาก API ทีหลัง
+        self.medicines = []
+        self.slots_data = []
 
     def on_kv_post(self, base_widget):
+        # โหลดข้อมูลจาก API
+        self.load_data_from_api()
         self.render_medicine_rows()
         self.refresh_cart_view()
+
+    def load_data_from_api(self):
+        """ดึงข้อมูลยาและช่องจาก API"""
+        try:
+            # ดึงข้อมูลยา (products)
+            products_response = requests.get(f"{API_BASE_URL}/products", timeout=5)
+            if products_response.status_code == 200:
+                products_data = products_response.json()
+                self.medicines = [
+                    {
+                        "id": product["product_id"],
+                        "name": product["product_name"] or "ไม่ระบุชื่อ"
+                    }
+                    for product in products_data
+                ]
+            else:
+                toast(f"ไม่สามารถดึงข้อมูลยาได้: {products_response.status_code}")
+                
+            # ดึงข้อมูลช่อง (slots with stocks)
+            slots_response = requests.get(f"{API_BASE_URL}/slots", timeout=5)
+            if slots_response.status_code == 200:
+                slots_data = slots_response.json()
+                self.slots_data = []
+                
+                for slot in slots_data:
+                    # แปลงข้อมูล stocks ให้อยู่ในรูปแบบที่ UI ใช้
+                    products_in_slot = []
+                    for stock in slot.get("stocks", []):
+                        product = stock.get("product", {})
+                        products_in_slot.append({
+                            "id": product.get("product_id", ""),
+                            "name": product.get("product_name", "ไม่ระบุชื่อ"),
+                            "qty": stock.get("amount", 0)
+                        })
+                    
+                    self.slots_data.append({
+                        "slot": slot["slot_id"],
+                        "capacity": slot.get("capacity", 50),
+                        "products": products_in_slot
+                    })
+            else:
+                toast(f"ไม่สามารถดึงข้อมูลช่องได้: {slots_response.status_code}")
+                
+        except requests.RequestException as e:
+            toast(f"ข้อผิดพลาดในการเชื่อมต่อ API: {str(e)}")
+            print(f"API Error: {e}")
+            
+            # ใช้ข้อมูล fallback หาก API ไม่ทำงาน
+            self.medicines = [
+                {"id": "MED001", "name": "พาราเซตามอล 500mg"},
+                {"id": "MED002", "name": "แอสไพริน 100mg"},
+            ]
+            self.slots_data = [
+                {"slot": 1, "capacity": 50, "products": []},
+                {"slot": 2, "capacity": 50, "products": []},
+            ]
 
     def render_medicine_rows(self):
         self.ids.medicine_rows.clear_widgets()
@@ -210,16 +237,35 @@ class RestockScreen(MDScreen):
             )
             self.ids.medicine_rows.add_widget(row)
 
+    def _apply_thai_to_theme(self):
+        """
+        บังคับให้ทุก Font Style ของ KivyMD (H1-H6, Body, Button, etc.)
+        เปลี่ยนมาใช้ Font 'Thai' ที่เราลงทะเบียนไว้
+        """
+        app = MDApp.get_running_app()
+        # รายชื่อสไตล์ทั้งหมดที่ KivyMD ใช้งาน
+        font_styles = [
+            "H1", "H2", "H3", "H4", "H5", "H6", 
+            "Subtitle1", "Subtitle2", "Body1", "Body2", 
+            "Button", "Caption", "Overline"
+        ]
+        
+        for style in font_styles:
+            # เปลี่ยนชื่อ Font ใน List ของแต่ละ Style (ตำแหน่งที่ 0 คือชื่อ Font)
+            if style in app.theme_cls.font_styles:
+                app.theme_cls.font_styles[style][0] = "Thai"
+
     def open_add_dialog(self, medicine):
         self.selected_medicine = medicine
         self.selected_slot = None
+
+        self._apply_thai_to_theme()
 
         self.quantity_input = MDTextField(
             hint_text="จำนวน",
             text="1",
             input_filter="int",
             mode="rectangle",
-            helper_text="กรุณาระบุจำนวนที่ต้องการเติม",
             helper_text_mode="persistent",
         )
 
@@ -245,9 +291,9 @@ class RestockScreen(MDScreen):
             size_hint_y=None,
             height=dp(160),
         )
-        detail_card.add_widget(MDLabel(text="รหัสยา", theme_text_color="Secondary", font_style="Caption"))
-        detail_card.add_widget(MDLabel(text=medicine["id"], bold=True, font_style="H6", size_hint_y=None, height=dp(36)))
-        detail_card.add_widget(MDLabel(text="ชื่อยา", theme_text_color="Secondary", font_style="Caption"))
+        detail_card.add_widget(MDLabel(text="รหัสยา", theme_text_color="Secondary"))
+        detail_card.add_widget(MDLabel(text=medicine["id"], bold=True, size_hint_y=None, height=dp(36)))
+        detail_card.add_widget(MDLabel(text="ชื่อยา", theme_text_color="Secondary"))
         detail_card.add_widget(MDLabel(text=medicine["name"], bold=True))
 
         select_slot_card = MDCard(
@@ -265,11 +311,11 @@ class RestockScreen(MDScreen):
 
         content = MDBoxLayout(
             orientation="vertical",
-            spacing=dp(10),
+            spacing=dp(15),
             size_hint_y=None,
-            height=dp(460),
+            height=dp(440),
         )
-        content.add_widget(MDLabel(text="กรุณาระบุจำนวนและเลือกช่องที่ต้องการเก็บยา", theme_text_color="Secondary", size_hint_y=None, height=dp(22)))
+        content.add_widget(MDLabel(text="กรุณาระบุจำนวนและเลือกช่องที่ต้องการเก็บยา", theme_text_color="Secondary", font_style="Subtitle2", size_hint_y=None, height=dp(20)))
         content.add_widget(detail_card)
         content.add_widget(MDLabel(text="จำนวนที่ต้องการเติม", size_hint_y=None, height=dp(20)))
         content.add_widget(self.quantity_input)
@@ -427,14 +473,74 @@ class RestockScreen(MDScreen):
 
         self.ids.cart_count_badge.text = f"{item_count} รายการ"
         self.ids.total_units_label.text = f"{total_units} หน่วย"
-        self.ids.cart_empty_state.opacity = 1 if item_count == 0 else 0
-        self.ids.cart_empty_state.disabled = item_count != 0
+        
+        # สลับการแสดงผลระหว่าง empty state และรายการยา
+        if item_count > 0:
+            self.ids.cart_empty_state.opacity = 0
+            self.ids.cart_empty_state.disabled = True
+            self.ids.cart_scroll.opacity = 1
+        else:
+            self.ids.cart_empty_state.opacity = 1
+            self.ids.cart_empty_state.disabled = False
+            self.ids.cart_scroll.opacity = 0
+        
+        # อัปเดตสถานะปุ่มยืนยัน
+        btn_confirm = self.ids.btn_confirm_restock
+        if item_count > 0:
+            btn_confirm.disabled = False
+            btn_confirm.md_bg_color = (0.12, 0.16, 0.23, 1)
+        else:
+            btn_confirm.disabled = True
+            btn_confirm.md_bg_color = (0.7, 0.7, 0.7, 1)
 
     def confirm_selection(self):
         if not self.cart_items:
             toast("ตะกร้าว่างเปล่า")
             return
 
+        # TODO: บันทึกข้อมูลไปยัง API เมื่อ API รองรับการสร้าง SlotStock อัตโนมัติ
+        """
+        try:
+            # สร้าง Transaction ก่อน
+            transaction_data = {
+                "user_id": "TEMP_USER_ID",  # TODO: ใช้ user_id จริงจาก session
+                "activity": "restock",
+                "status": "success"
+            }
+            
+            transaction_response = requests.post(
+                f"{API_BASE_URL}/transactions",
+                json=transaction_data,
+                timeout=5
+            )
+            
+            if transaction_response.status_code == 200:
+                transaction = transaction_response.json()
+                transaction_id = transaction["transaction_id"]
+                
+                # บันทึก Transaction Details (ต้องมี API endpoint ที่รองรับการสร้าง SlotStock)
+                for item in self.cart_items:
+                    detail_data = {
+                        "transaction_id": transaction_id,
+                        "product_id": item["id"],
+                        "slot_id": item["slot"],
+                        "amount": item["quantity"]
+                    }
+                    
+                    requests.post(
+                        f"{API_BASE_URL}/transactions/{transaction_id}/details",
+                        json=detail_data,
+                        timeout=5
+                    )
+                
+                toast("บันทึกการเติมยาสำเร็จ")
+        except requests.RequestException as e:
+            toast(f"ข้อผิดพลาด: {str(e)}")
+        """
+
+        # ล้างตะกร้าและโหลดข้อมูลใหม่
         self.cart_items.clear()
+        self.load_data_from_api()  # รีโหลดข้อมูลจาก API
         self.refresh_cart_view()
-        toast("ทำรายการเติมยาเสร็จสิ้น")
+        self.render_medicine_rows()
+        toast("ทำรายการเติมยาเสร็จสิ้น (ข้อมูลจะถูกบันทึกเมื่อ API พร้อม)")

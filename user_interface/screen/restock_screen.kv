@@ -40,7 +40,6 @@
 
                 MDLabel:
                     text: "รายการยา"
-                    font_style: "H6"
                     bold: True
 
             MDBoxLayout:
@@ -92,17 +91,17 @@
                     radius: [12, 12, 12, 12]
                     elevation: 0
                     md_bg_color: get_color_from_hex("#0EAD4A")
+                    padding: 0
 
-                    MDIcon:
-                        icon: "cart-outline"
-                        theme_text_color: "Custom"
-                        text_color: 1, 1, 1, 1
-                        halign: "center"
-                        valign: "middle"
-
+                    MDRelativeLayout:
+                        MDIcon:
+                            icon: "cart-outline"
+                            theme_text_color: "Custom"
+                            text_color: 1, 1, 1, 1
+                            pos_hint: {"center_x": .5, "center_y": .5}
+                            
                 MDLabel:
                     text: "ตะกร้า"
-                    font_style: "H6"
                     bold: True
 
                 MDCard:
@@ -118,10 +117,13 @@
                         halign: "center"
                         valign: "middle"
 
-            FloatLayout:
+            MDRelativeLayout:
+                size_hint_y: 1
                 ScrollView:
+                    id: cart_scroll
                     do_scroll_x: False
                     size_hint: 1, 1
+                    opacity: 0 # เริ่มต้นซ่อนไว้
 
                     MDBoxLayout:
                         id: cart_list
@@ -133,9 +135,11 @@
                 MDBoxLayout:
                     id: cart_empty_state
                     orientation: "vertical"
-                    spacing: "8dp"
                     size_hint: 1, 1
-                    padding: ["24dp", "24dp", "24dp", "24dp"]
+                    pos_hint: {"center_x": .5, "center_y": .5}
+                    padding: "24dp"
+                    spacing: "12dp"
+                    opacity: 1 # เริ่มต้นแสดงผล
 
                     Widget:
                     MDCard:
@@ -146,12 +150,13 @@
                         elevation: 0
                         md_bg_color: get_color_from_hex("#F0F2F5")
 
-                        MDIcon:
-                            icon: "cube-outline"
-                            halign: "center"
-                            valign: "middle"
-                            theme_text_color: "Hint"
-                            font_size: "32sp"
+                        MDRelativeLayout:
+                            MDIcon:
+                                icon: "cube-outline"
+                                halign: "center"
+                                theme_text_color: "Hint"
+                                font_size: "32sp"
+                                pos_hint: {"center_x": .5, "center_y": .5}
 
                     MDLabel:
                         text: "ตะกร้าว่างเปล่า"
@@ -194,6 +199,7 @@
                             bold: True
 
                 MDRaisedButton:
+                    id: btn_confirm_restock
                     text: "ยืนยันการเติมยา"
                     icon: "check-circle-outline"
                     md_bg_color: DARK_BUTTON
@@ -220,15 +226,16 @@
             text: root.med_name
             valign: "middle"
 
-    MDBoxLayout:
+    MDRelativeLayout:
         size_hint_x: 0.30
-        padding: ["0dp", "8dp", "0dp", "8dp"]
 
-        MDRaisedButton:
+        MDFillRoundFlatIconButton:
             text: "เลือก"
             icon: "plus"
             pos_hint: {"right": 1, "center_y": .5}
             md_bg_color: DARK_BUTTON
+            text_color: 1, 1, 1, 1
+            icon_color: 1, 1, 1, 1
             on_release: root.select_callback() if root.select_callback else None
 
 
@@ -257,6 +264,7 @@
                 icon: "delete-outline"
                 theme_text_color: "Custom"
                 text_color: 1, 0, 0, 1
+                pos_hint: {"center_y": .5}
                 on_release: root.delete_callback() if root.delete_callback else None
 
         MDLabel:
@@ -279,7 +287,7 @@
                 size: "52dp", "30dp"
 
                 MDLabel:
-                    text: f"📦 {root.quantity}"
+                    text: f"{root.quantity}"
                     halign: "center"
                     valign: "middle"
                     font_style: "Caption"
