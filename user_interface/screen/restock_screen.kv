@@ -33,6 +33,25 @@
 
                 MDCard:
                     size_hint: None, None
+                    size: "48dp", "48dp"
+                    radius: [8, 8, 8, 8]
+                    elevation: 0
+                    md_bg_color: SOFT_HEADER
+                    ripple_behavior: True
+                    on_release: root.go_home()
+                    
+                    MDBoxLayout:
+                        padding: 0
+                        
+                        MDIcon:
+                            icon: "arrow-left"
+                            halign: "center"
+                            valign: "middle"
+                            theme_text_color: "Custom"
+                            text_color: DARK_BUTTON
+
+                MDCard:
+                    size_hint: None, None
                     size: "32dp", "32dp"
                     radius: [10, 10, 10, 10]
                     elevation: 0
@@ -152,7 +171,7 @@
 
                         MDRelativeLayout:
                             MDIcon:
-                                icon: "cube-outline"
+                                icon: "package-variant-closed"
                                 halign: "center"
                                 theme_text_color: "Hint"
                                 font_size: "32sp"
@@ -241,7 +260,7 @@
 
 <CartItemWidget>:
     size_hint_y: None
-    height: "102dp"
+    height: "120dp"
 
     MDCard:
         radius: [10, 10, 10, 10]
@@ -255,20 +274,35 @@
         MDBoxLayout:
             size_hint_y: None
             height: "28dp"
+            spacing: "8dp"
 
             MDLabel:
                 text: root.product_name
                 bold: True
+                max_lines: 1
+                shorten: True
+                shorten_from: "right"
+                text_size: self.width, None
+                size_hint_x: 0.85
 
             MDIconButton:
                 icon: "delete-outline"
                 theme_text_color: "Custom"
                 text_color: 1, 0, 0, 1
+                size_hint_x: None
+                width: "40dp"
                 pos_hint: {"center_y": .5}
-                on_release: root.delete_callback() if root.delete_callback else None
+                on_release: root.on_delete_press()
 
         MDLabel:
             text: root.product_id
+            font_style: "Caption"
+            theme_text_color: "Secondary"
+            size_hint_y: None
+            height: "18dp"
+
+        MDLabel:
+            text: f"LOT: {root.lot_id}  |  หมดอายุ: {root.expired_at}"
             font_style: "Caption"
             theme_text_color: "Secondary"
             size_hint_y: None

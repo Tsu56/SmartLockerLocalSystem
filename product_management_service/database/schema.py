@@ -23,7 +23,6 @@ class ProductPublic(ProductBase):
 
 # --- Slot Stock Schemas ---
 class SlotStockBase(SQLModel):
-    slot_stock_id: int = Field(index=True, unique=True, description="ID ของ Stock Record จาก Server")
     lot_id: str = Field(description="เลขล็อตของสินค้า")
     product_id: str = Field(description="ID ของสินค้าที่อยู่ในสต็อกนี้")
     slot_id: int = Field(description="ID ของช่องที่เก็บสต็อกนี้")
@@ -38,7 +37,7 @@ class SlotStockUpdate(SQLModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class SlotStockPublic(SlotStockBase):
-    id: int
+    slot_stock_id: int
     created_at: datetime
     updated_at: Optional[datetime] = None
 
@@ -73,6 +72,37 @@ class TransactionDetailPublic(TransactionDetailBase):
     transaction_detail_id: int
     created_at: datetime
 
+
+class RestockItemCreate(SQLModel):
+    product_id: str = Field(description="ID ของสินค้าที่ต้องการเติม")
+    slot_id: int = Field(description="ID ของช่องที่ต้องการเติม")
+    amount: int = Field(gt=0, description="จำนวนที่ต้องการเติม")
+    lot_id: str = Field(description="เลขล็อตของสินค้าที่เติม")
+    expired_at: date = Field(description="วันหมดอายุของล็อตที่เติม")
+
+
+class RestockCreate(SQLModel):
+    user_id: str = Field(description="UUID ของผู้ใช้งานที่ทำรายการเติม")
+    items: List[RestockItemCreate]
+
+
+class RestockItemPublic(SQLModel):
+    transaction_detail_id: int
+    slot_stock_id: int
+    product_id: str
+    slot_id: int
+    amount: int
+    lot_id: str
+    expired_at: Optional[date] = None
+
+
+class RestockPublic(SQLModel):
+    transaction_id: int
+    activity: str
+    status: str
+    processed_items: int
+    details: List[RestockItemPublic] = []
+
 # --- Snapshot Schemas ---
 class SnapshotBase(SQLModel):
     image_path: Optional[str] = Field(default=None, description="พาร์ทรูปภาพในเครื่อง Local")
@@ -95,7 +125,6 @@ class SnapshotPublic(SnapshotBase):
 
 class StockDetailPublic(SQLModel):
     """ข้อมูลสต็อกที่รวมชื่อสินค้ามาแล้ว เพื่อแสดงผลในหน้าเบิก/เติมของ"""
-    id: int
     slot_stock_id: int
     lot_id: str
     amount: int

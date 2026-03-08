@@ -7,13 +7,15 @@ from kivy.uix.scrollview import ScrollView
 from kivymd.app import MDApp
 from kivymd.toast import toast
 from kivymd.uix.boxlayout import MDBoxLayout
+from kivymd.uix.relativelayout import MDRelativeLayout
 from kivymd.uix.button import MDFlatButton, MDIconButton
 from kivymd.uix.card import MDCard
 from kivymd.uix.datatables import MDDataTable
 from kivymd.uix.dialog import MDDialog
-from kivymd.uix.label import MDLabel
+from kivymd.uix.label import MDLabel, MDIcon
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.textfield import MDTextField
+from kivymd.uix.pickers import MDDatePicker
 import requests
 
 # URL ของ API Gateway
@@ -31,7 +33,17 @@ class CartItemWidget(MDBoxLayout):
     product_name = StringProperty("")
     slot = StringProperty("")
     quantity = StringProperty("0")
+    lot_id = StringProperty("")
+    expired_at = StringProperty("")
     delete_callback = ObjectProperty(None)
+
+    def __init__(self, **kwargs):
+        self.delete_callback = kwargs.pop("delete_callback", None)
+        super().__init__(**kwargs)
+
+    def on_delete_press(self):
+        if callable(self.delete_callback):
+            self.delete_callback()
 
 
 class SlotSelectCard(MDCard):
@@ -43,7 +55,7 @@ class SlotSelectCard(MDCard):
         self.padding = dp(12)
         self.spacing = dp(10)
         self.size_hint = (None, None)
-        self.size = (dp(210), dp(190))
+        self.size = (dp(180), dp(205))
         self.radius = [12]
         self.ripple_behavior = True
 
@@ -106,8 +118,15 @@ class SlotSelectCard(MDCard):
         name_label = MDLabel(
             text=top_name,
             halign="center",
+            valign="middle",
             theme_text_color="Primary",
             bold=True,
+            size_hint_y=None,
+            height=dp(50),
+            text_size=(dp(156), None),
+            max_lines=2,
+            shorten=True,
+            shorten_from="right",
         )
         remain_label = MDLabel(
             text=f"คงเหลือ {top_qty} หน่วย",
@@ -158,6 +177,8 @@ class RestockScreen(MDScreen):
         self.add_dialog = None
         self.slot_dialog = None
         self.quantity_input = None
+        self.lot_id_input = None
+        self.expired_at_input = None
         self.slot_button = None
         self.slot_info_label = None
 
@@ -170,6 +191,11 @@ class RestockScreen(MDScreen):
         self.load_data_from_api()
         self.render_medicine_rows()
         self.refresh_cart_view()
+
+    def go_home(self):
+        app = MDApp.get_running_app()
+        if app and hasattr(app, "change_screen"):
+            app.change_screen("home_screen")
 
     def load_data_from_api(self):
         """ดึงข้อมูลยาและช่องจาก API"""
@@ -265,8 +291,37 @@ class RestockScreen(MDScreen):
             hint_text="จำนวน",
             text="1",
             input_filter="int",
-            mode="rectangle",
-            helper_text_mode="persistent",
+            mode="fill",
+            fill_color_normal=(1, 1, 1, 1),
+            line_color_normal=(0.5, 0.5, 0.5, 0.5),
+            helper_text_mode="on_error",
+        )
+
+        self.lot_id_input = MDTextField(
+            hint_text="LOT ID",
+            mode="fill",
+            fill_color_normal=(1, 1, 1, 1),
+            line_color_normal=(0.5, 0.5, 0.5, 0.5),
+            helper_text_mode="on_error",
+            multiline=False,
+        )
+
+        self.expired_at_input = MDTextField(
+            hint_text="(YYYY-MM-DD)",
+            mode="fill",
+            fill_color_normal=(1, 1, 1, 1),
+            line_color_normal=(0.5, 0.5, 0.5, 0.5),
+            helper_text_mode="on_error",
+            multiline=False,
+            readonly=True,
+        )
+        
+        # ปุ่มเปิด date picker
+        date_picker_btn = MDIconButton(
+            icon="calendar",
+            size_hint=(None, None),
+            size=(dp(48), dp(48)),
+            on_release=lambda *_: self.open_date_picker(),
         )
 
         self.slot_button = MDFlatButton(
@@ -306,21 +361,93 @@ class RestockScreen(MDScreen):
             line_color=(0.82, 0.84, 0.88, 1),
             line_width=1,
         )
-        select_slot_card.add_widget(MDLabel(text="📦", size_hint_x=None, width=dp(24), halign="center"))
+        
+        icon_container = MDCard(
+            size_hint=(None, None),
+            size=(dp(40), dp(40)),
+            radius=[8],
+            elevation=0,
+            md_bg_color=(0.93, 0.94, 0.95, 1),
+        )
+        
+        icon_layout = MDRelativeLayout()
+        icon_layout.add_widget(
+            MDIcon(
+                icon="package-variant-closed",
+                halign="center",
+                valign="middle",
+                theme_text_color="Secondary",
+                pos_hint={"center_x": 0.5, "center_y": 0.5},
+            )
+        )
+        
+        icon_container.add_widget(icon_layout)
+        
+        select_slot_card.add_widget(icon_container)
         select_slot_card.add_widget(self.slot_button)
+
+        row1 = MDBoxLayout(
+            orientation="horizontal",
+            spacing=dp(12),
+            size_hint_y=None,
+            height=dp(78),
+        )
+        row1_left = MDBoxLayout(
+            orientation="vertical",
+            spacing=dp(6),
+        )
+        row1_left.add_widget(MDLabel(text="จำนวนที่ต้องการเติม", size_hint_y=None, height=dp(20)))
+        row1_left.add_widget(self.quantity_input)
+        row1_right = MDBoxLayout(
+            orientation="vertical",
+            spacing=dp(6),
+        )
+        row1_right.add_widget(MDLabel(text="LOT ID", size_hint_y=None, height=dp(20)))
+        row1_right.add_widget(self.lot_id_input)
+        row1.add_widget(row1_left)
+        row1.add_widget(row1_right)
+
+        row2 = MDBoxLayout(
+            orientation="horizontal",
+            spacing=dp(12),
+            size_hint_y=None,
+            height=dp(92),
+        )
+        row2_left = MDBoxLayout(
+            orientation="vertical",
+            spacing=dp(6),
+        )
+        row2_left.add_widget(MDLabel(text="วันหมดอายุ", size_hint_y=None, height=dp(20)))
+        
+        # Container สำหรับ TextField + ปุ่มปฏิทิน
+        date_input_container = MDBoxLayout(
+            orientation="horizontal",
+            spacing=dp(8),
+        )
+        date_input_container.add_widget(self.expired_at_input)
+        date_input_container.add_widget(date_picker_btn)
+        
+        row2_left.add_widget(date_input_container)
+        row2_right = MDBoxLayout(
+            orientation="vertical",
+            spacing=dp(6),
+        )
+        row2_right.add_widget(MDLabel(text="เลือกช่องที่จะเก็บ", size_hint_y=None, height=dp(20)))
+        row2_right.add_widget(select_slot_card)
+        row2.add_widget(row2_left)
+        row2.add_widget(row2_right)
 
         content = MDBoxLayout(
             orientation="vertical",
-            spacing=dp(15),
+            spacing=dp(20),
             size_hint_y=None,
-            height=dp(440),
         )
-        content.add_widget(MDLabel(text="กรุณาระบุจำนวนและเลือกช่องที่ต้องการเก็บยา", theme_text_color="Secondary", font_style="Subtitle2", size_hint_y=None, height=dp(20)))
+        content.bind(minimum_height=content.setter("height"))
+        content.add_widget(MDLabel(text="กรุณาระบุจำนวนและเลือกช่องที่ต้องการเก็บยา", theme_text_color="Secondary", font_style="Subtitle2"))
         content.add_widget(detail_card)
-        content.add_widget(MDLabel(text="จำนวนที่ต้องการเติม", size_hint_y=None, height=dp(20)))
-        content.add_widget(self.quantity_input)
-        content.add_widget(MDLabel(text="เลือกช่องที่จะเก็บ", size_hint_y=None, height=dp(20)))
-        content.add_widget(select_slot_card)
+        content.add_widget(MDBoxLayout(size_hint_y=None, height=dp(4)))
+        content.add_widget(row1)
+        content.add_widget(row2)
         content.add_widget(self.slot_info_label)
 
         self.add_dialog = MDDialog(
@@ -342,15 +469,74 @@ class RestockScreen(MDScreen):
             card = SlotSelectCard(slot, on_select=self.on_slot_chosen)
             grid.add_widget(card)
 
-        scroll = ScrollView(do_scroll_x=False)
+        scroll = ScrollView(
+            do_scroll_x=False,
+            size_hint_y=1,
+        )
         scroll.add_widget(grid)
 
-        legend = MDBoxLayout(size_hint_y=None, height=dp(30), spacing=dp(18), padding=[dp(6), 0, 0, 0])
-        legend.add_widget(MDLabel(text="🟢 ช่องว่าง", theme_text_color="Secondary"))
-        legend.add_widget(MDLabel(text="🟠 มียาบางส่วน", theme_text_color="Secondary"))
-        legend.add_widget(MDLabel(text="🔴 เต็ม", theme_text_color="Secondary"))
+        # Inner legend box with fixed width for compact grouping
+        legend_inner = MDBoxLayout(
+            size_hint=(None, None),
+            size=(dp(450), dp(30)),
+            spacing=dp(16),
+        )
+        
+        # ช่องว่าง (สีเขียว)
+        empty_box = MDBoxLayout(spacing=dp(8), size_hint_x=None, width=dp(120))
+        empty_indicator = MDCard(
+            size_hint=(None, None),
+            size=(dp(20), dp(20)),
+            radius=[dp(10)],
+            md_bg_color=(0.11, 0.77, 0.36, 1),
+            elevation=0,
+        )
+        empty_box.add_widget(empty_indicator)
+        empty_box.add_widget(MDLabel(text="ช่องว่าง", theme_text_color="Secondary", size_hint_y=None, height=dp(20), valign="middle"))
+        
+        # มียาบางส่วน (สีส้ม)
+        partial_box = MDBoxLayout(spacing=dp(8), size_hint_x=None, width=dp(140))
+        partial_indicator = MDCard(
+            size_hint=(None, None),
+            size=(dp(20), dp(20)),
+            radius=[dp(10)],
+            md_bg_color=(0.94, 0.66, 0.05, 1),
+            elevation=0,
+        )
+        partial_box.add_widget(partial_indicator)
+        partial_box.add_widget(MDLabel(text="มียาบางส่วน", theme_text_color="Secondary", size_hint_y=None, height=dp(20), valign="middle"))
+        
+        # เต็ม (สีแดง)
+        full_box = MDBoxLayout(spacing=dp(8), size_hint_x=None, width=dp(80))
+        full_indicator = MDCard(
+            size_hint=(None, None),
+            size=(dp(20), dp(20)),
+            radius=[dp(10)],
+            md_bg_color=(0.95, 0.24, 0.24, 1),
+            elevation=0,
+        )
+        full_box.add_widget(full_indicator)
+        full_box.add_widget(MDLabel(text="เต็ม", theme_text_color="Secondary", size_hint_y=None, height=dp(20), valign="middle"))
+        
+        legend_inner.add_widget(empty_box)
+        legend_inner.add_widget(partial_box)
+        legend_inner.add_widget(full_box)
+        
+        # Outer wrapper to center the legend group
+        legend = MDBoxLayout(
+            size_hint_y=None,
+            height=dp(30),
+        )
+        legend.add_widget(MDLabel())  # Left spacer
+        legend.add_widget(legend_inner)
+        legend.add_widget(MDLabel())  # Right spacer
 
-        content = MDBoxLayout(orientation="vertical", spacing=dp(10), size_hint_y=None, height=dp(490))
+        content = MDBoxLayout(
+            orientation="vertical",
+            spacing=dp(10),
+            size_hint=(None, None),
+            size=(dp(640), dp(440)),
+        )
         content.add_widget(MDLabel(text="คลิกที่ช่องเพื่อเลือกตำแหน่งที่ต้องการเติมยา", theme_text_color="Secondary", size_hint_y=None, height=dp(22)))
         content.add_widget(scroll)
         content.add_widget(legend)
@@ -359,6 +545,8 @@ class RestockScreen(MDScreen):
             title="เลือกช่องเก็บยา",
             type="custom",
             content_cls=content,
+            size_hint=(None, None),
+            width=dp(640),
             buttons=[MDFlatButton(text="ปิด", on_release=lambda *_: self.slot_dialog.dismiss())],
         )
         self.slot_dialog.open()
@@ -380,6 +568,22 @@ class RestockScreen(MDScreen):
         else:
             self.slot_info_label.text = ""
 
+    def open_date_picker(self):
+        """เปิด date picker สำหรับเลือกวันหมดอายุ"""
+        date_dialog = MDDatePicker()
+        date_dialog.bind(on_save=self.on_date_selected, on_cancel=self.on_date_cancel)
+        date_dialog.open()
+
+    def on_date_selected(self, instance, value, date_range):
+        """เมื่อเลือกวันที่แล้ว นำมาใส่ใน TextField"""
+        self.expired_at_input.text = value.strftime("%Y-%m-%d")
+        self.expired_at_input.error = False
+        self.expired_at_input.helper_text = ""
+
+    def on_date_cancel(self, instance, value):
+        """เมื่อยกเลิกการเลือกวันที่"""
+        pass
+
     def add_to_cart_from_dialog(self):
         if not self.selected_medicine:
             return
@@ -395,6 +599,30 @@ class RestockScreen(MDScreen):
             self.quantity_input.helper_text = "จำนวนไม่ถูกต้อง"
             return
 
+        lot_id = self.lot_id_input.text.strip()
+        if not lot_id:
+            self.lot_id_input.error = True
+            self.lot_id_input.helper_text = "กรุณากรอก LOT ID"
+            return
+        self.lot_id_input.error = False
+        self.lot_id_input.helper_text = ""
+
+        expired_at_text = self.expired_at_input.text.strip()
+        if not expired_at_text:
+            self.expired_at_input.error = True
+            self.expired_at_input.helper_text = "กรุณากรอกวันหมดอายุ"
+            return
+
+        try:
+            datetime.strptime(expired_at_text, "%Y-%m-%d")
+        except ValueError:
+            self.expired_at_input.error = True
+            self.expired_at_input.helper_text = "รูปแบบวันที่ต้องเป็น YYYY-MM-DD"
+            return
+
+        self.expired_at_input.error = False
+        self.expired_at_input.helper_text = ""
+
         if quantity <= 0:
             self.quantity_input.error = True
             self.quantity_input.helper_text = "จำนวนต้องมากกว่า 0"
@@ -407,22 +635,29 @@ class RestockScreen(MDScreen):
             self.quantity_input.helper_text = f"เกินพื้นที่ว่าง (เติมได้สูงสุด {available})"
             return
 
-        self._append_cart_item(self.selected_medicine, self.selected_slot["slot"], quantity)
+        self._append_cart_item(
+            self.selected_medicine,
+            self.selected_slot["slot"],
+            quantity,
+            lot_id,
+            expired_at_text,
+        )
         self._apply_slot_restock(self.selected_medicine, self.selected_slot, quantity)
 
         self.refresh_cart_view()
-        self.render_medicine_rows()
 
         if self.add_dialog:
             self.add_dialog.dismiss()
 
-    def _append_cart_item(self, medicine, slot_number, quantity):
+    def _append_cart_item(self, medicine, slot_number, quantity, lot_id, expired_at):
         self.cart_items.append(
             {
                 "id": medicine["id"],
                 "name": medicine["name"],
                 "slot": slot_number,
                 "quantity": quantity,
+                "lot_id": lot_id,
+                "expired_at": expired_at,
                 "created_at": datetime.utcnow().isoformat(),
             }
         )
@@ -434,15 +669,44 @@ class RestockScreen(MDScreen):
                 return
         slot_info["products"].append({"id": medicine["id"], "name": medicine["name"], "qty": quantity})
 
-    def remove_cart_item(self, cart_item):
-        if cart_item not in self.cart_items:
+    def remove_cart_item(self, cart_item, cart_widget=None):
+        """ลบรายการออกจากตะกร้า"""
+        if not isinstance(cart_item, dict):
+            print(f"Warning: Invalid cart item payload: {cart_item}")
             return
 
-        self.cart_items.remove(cart_item)
-        self._revert_slot_restock(cart_item)
+        removed_item = None
 
-        self.refresh_cart_view()
-        self.render_medicine_rows()
+        # จับคู่ด้วย created_at ก่อน (แม่นยำที่สุด)
+        created_at = cart_item.get("created_at")
+        if created_at:
+            for i, item in enumerate(self.cart_items):
+                if item.get("created_at") == created_at:
+                    removed_item = self.cart_items.pop(i)
+                    break
+
+        # fallback: จับคู่ด้วยข้อมูลหลัก
+        if removed_item is None:
+            for i, item in enumerate(self.cart_items):
+                if (
+                    item.get("id") == cart_item.get("id")
+                    and item.get("slot") == cart_item.get("slot")
+                    and item.get("quantity") == cart_item.get("quantity")
+                ):
+                    removed_item = self.cart_items.pop(i)
+                    break
+
+        if removed_item is None:
+            print(f"Warning: Item not found in cart: {cart_item}")
+            return
+
+        self._revert_slot_restock(removed_item)
+
+        if cart_widget is not None and getattr(cart_widget, "parent", None):
+            self.ids.cart_list.remove_widget(cart_widget)
+            self._update_cart_summary_ui()
+        else:
+            self.refresh_cart_view()
 
     def _revert_slot_restock(self, cart_item):
         for slot in self.slots_data:
@@ -464,10 +728,16 @@ class RestockScreen(MDScreen):
                 product_id=item["id"],
                 slot=f"ช่อง {item['slot']}",
                 quantity=str(item["quantity"]),
-                delete_callback=lambda x=item: self.remove_cart_item(x),
+                lot_id=item.get("lot_id", ""),
+                expired_at=item.get("expired_at", ""),
+                delete_callback=None,
             )
+            widget.delete_callback = lambda selected_item=item, selected_widget=widget: self.remove_cart_item(selected_item, selected_widget)
             self.ids.cart_list.add_widget(widget)
 
+        self._update_cart_summary_ui()
+
+    def _update_cart_summary_ui(self):
         item_count = len(self.cart_items)
         total_units = sum(item["quantity"] for item in self.cart_items)
 
@@ -477,11 +747,12 @@ class RestockScreen(MDScreen):
         # สลับการแสดงผลระหว่าง empty state และรายการยา
         if item_count > 0:
             self.ids.cart_empty_state.opacity = 0
-            self.ids.cart_empty_state.disabled = True
+            self.ids.cart_empty_state.size_hint = (None, None)
+            self.ids.cart_empty_state.size = (0, 0)
             self.ids.cart_scroll.opacity = 1
         else:
             self.ids.cart_empty_state.opacity = 1
-            self.ids.cart_empty_state.disabled = False
+            self.ids.cart_empty_state.size_hint = (1, 1)
             self.ids.cart_scroll.opacity = 0
         
         # อัปเดตสถานะปุ่มยืนยัน
@@ -494,53 +765,88 @@ class RestockScreen(MDScreen):
             btn_confirm.md_bg_color = (0.7, 0.7, 0.7, 1)
 
     def confirm_selection(self):
+        """ยืนยันการเติมยาและบันทึกข้อมูล"""
         if not self.cart_items:
             toast("ตะกร้าว่างเปล่า")
             return
 
-        # TODO: บันทึกข้อมูลไปยัง API เมื่อ API รองรับการสร้าง SlotStock อัตโนมัติ
-        """
+        # ตรวจสอบว่าทุกรายการมีข้อมูลครบถ้วน
+        for item in self.cart_items:
+            if not item.get("lot_id"):
+                toast(f"รายการ {item['name']} ยังไม่มี LOT ID")
+                return
+            if not item.get("expired_at"):
+                toast(f"รายการ {item['name']} ยังไม่มีวันหมดอายุ")
+                return
+
+        # แสดง dialog ยืนยันก่อนทำรายการ
+        total_items = len(self.cart_items)
+        total_units = sum(item["quantity"] for item in self.cart_items)
+        
+        confirm_dialog = MDDialog(
+            title="ยืนยันการเติมยา",
+            text=f"คุณต้องการเติมยาจำนวน {total_items} รายการ ({total_units} หน่วย) ใช่หรือไม่?",
+            buttons=[
+                MDFlatButton(
+                    text="ยกเลิก",
+                    on_release=lambda *_: confirm_dialog.dismiss()
+                ),
+                MDFlatButton(
+                    text="ยืนยัน",
+                    on_release=lambda *_: self.process_restock(confirm_dialog)
+                ),
+            ],
+        )
+        confirm_dialog.open()
+
+    def process_restock(self, dialog):
+        """ดำเนินการเติมยาจริง"""
+        dialog.dismiss()
+
+        app = MDApp.get_running_app()
+        user_id = getattr(app, "user_id", "").strip() if app else ""
+
+        if not user_id:
+            toast("ไม่พบข้อมูลผู้ใช้ กรุณาเข้าสู่ระบบใหม่")
+            return
+
+        payload = {
+            "user_id": user_id,
+            "items": [
+                {
+                    "product_id": item["id"],
+                    "slot_id": item["slot"],
+                    "amount": item["quantity"],
+                    "lot_id": item["lot_id"],
+                    "expired_at": item["expired_at"],
+                }
+                for item in self.cart_items
+            ],
+        }
+
         try:
-            # สร้าง Transaction ก่อน
-            transaction_data = {
-                "user_id": "TEMP_USER_ID",  # TODO: ใช้ user_id จริงจาก session
-                "activity": "restock",
-                "status": "success"
-            }
-            
-            transaction_response = requests.post(
-                f"{API_BASE_URL}/transactions",
-                json=transaction_data,
-                timeout=5
+            restock_response = requests.post(
+                f"{API_BASE_URL}/restock",
+                json=payload,
+                timeout=10,
             )
-            
-            if transaction_response.status_code == 200:
-                transaction = transaction_response.json()
-                transaction_id = transaction["transaction_id"]
-                
-                # บันทึก Transaction Details (ต้องมี API endpoint ที่รองรับการสร้าง SlotStock)
-                for item in self.cart_items:
-                    detail_data = {
-                        "transaction_id": transaction_id,
-                        "product_id": item["id"],
-                        "slot_id": item["slot"],
-                        "amount": item["quantity"]
-                    }
-                    
-                    requests.post(
-                        f"{API_BASE_URL}/transactions/{transaction_id}/details",
-                        json=detail_data,
-                        timeout=5
-                    )
-                
-                toast("บันทึกการเติมยาสำเร็จ")
+
+            if restock_response.status_code != 200:
+                detail_message = ""
+                try:
+                    detail_message = restock_response.json().get("detail", "")
+                except ValueError:
+                    detail_message = restock_response.text
+                toast(f"เกิดข้อผิดพลาด: {detail_message or restock_response.status_code}")
+                return
+
         except requests.RequestException as e:
             toast(f"ข้อผิดพลาด: {str(e)}")
-        """
+            return
 
         # ล้างตะกร้าและโหลดข้อมูลใหม่
         self.cart_items.clear()
         self.load_data_from_api()  # รีโหลดข้อมูลจาก API
         self.refresh_cart_view()
         self.render_medicine_rows()
-        toast("ทำรายการเติมยาเสร็จสิ้น (ข้อมูลจะถูกบันทึกเมื่อ API พร้อม)")
+        toast("บันทึกการเติมยาสำเร็จ")

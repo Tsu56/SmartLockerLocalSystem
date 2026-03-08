@@ -66,7 +66,7 @@ def get_slots_with_stock(session: Session = Depends(get_session)):
             })
             
         result.append({
-            "slot_id": slot["slot_id"],
+            "slot_id": slot["id"],
             "slot_status": slot["slot_status"],
             "capacity": slot["capacity"],
             "stocks": stocks_data
@@ -157,6 +157,137 @@ def add_transaction_detail(
     session.commit()
     session.refresh(db_detail)
     return db_detail
+
+
+@router.post("/restock", response_model=schema.RestockPublic)
+def restock_items(restock_data: schema.RestockCreate, session: Session = Depends(get_session)):
+    """
+    เติมยาแบบยกตะกร้าในคำขอเดียว
+    - สร้าง Transaction (activity=restock)
+    - ตรวจสอบ Capacity ต่อช่อง
+    - สร้าง/อัปเดต SlotStock ตาม product_id + slot_id + lot_id + expired_at
+    - สร้าง TransactionDetail พร้อม slot_stock_id ที่ได้จริง
+    """
+    if not restock_data.items:
+        raise HTTPException(status_code=400, detail="Restock items cannot be empty")
+
+    # ดึงข้อมูลช่องเพื่อใช้ตรวจสอบ slot_id และ capacity
+    try:
+        headers = {"X-Internal-Secret": INTERNAL_SHARED_SECRET}
+        slot_response = requests.get(
+            f"{DEVICE_SERVICE_URL}/device/internal/slots",
+            headers=headers,
+            timeout=10,
+        )
+        if slot_response.status_code != 200:
+            raise HTTPException(
+                status_code=slot_response.status_code,
+                detail="Failed to fetch slots from device service",
+            )
+        slots = slot_response.json()
+    except requests.RequestException as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error connecting to device service: {str(e)}",
+        )
+
+    slots_by_id = {}
+    for slot in slots:
+        if "slot_id" in slot:
+            slots_by_id[slot["slot_id"]] = slot
+    added_amount_by_slot = {}
+
+    # ตรวจสอบข้อมูลที่ส่งมาก่อนเริ่มบันทึก
+    for item in restock_data.items:
+        if item.slot_id not in slots_by_id:
+            raise HTTPException(status_code=404, detail=f"Slot {item.slot_id} not found")
+
+        product = session.get(models.Product, item.product_id)
+        if not product:
+            raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
+
+        added_amount_by_slot[item.slot_id] = added_amount_by_slot.get(item.slot_id, 0) + item.amount
+
+    # ตรวจสอบ capacity แบบรวมทั้งตะกร้า
+    for slot_id, added_amount in added_amount_by_slot.items():
+        current_slot_stocks = session.exec(
+            select(models.SlotStock).where(models.SlotStock.slot_id == slot_id)
+        ).all()
+        current_total = sum(stock.amount for stock in current_slot_stocks)
+        capacity = slots_by_id[slot_id].get("capacity")
+
+        if capacity is not None and (current_total + added_amount) > capacity:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Amount exceeds slot capacity for slot {slot_id} "
+                    f"(capacity={capacity}, current={current_total}, added={added_amount})"
+                ),
+            )
+
+    db_transaction = models.Transaction(
+        user_id=restock_data.user_id,
+        activity="restock",
+        status="success",
+    )
+    session.add(db_transaction)
+    session.flush()
+
+    response_details = []
+
+    for item in restock_data.items:
+        slot_stock = session.exec(
+            select(models.SlotStock)
+            .where(models.SlotStock.product_id == item.product_id)
+            .where(models.SlotStock.slot_id == item.slot_id)
+            .where(models.SlotStock.lot_id == item.lot_id)
+            .where(models.SlotStock.expired_at == item.expired_at)
+        ).first()
+
+        if slot_stock:
+            slot_stock.amount += item.amount
+        else:
+            slot_stock = models.SlotStock(
+                lot_id=item.lot_id,
+                product_id=item.product_id,
+                slot_id=item.slot_id,
+                amount=item.amount,
+                expired_at=item.expired_at,
+            )
+            session.add(slot_stock)
+            session.flush()
+
+        db_detail = models.TransactionDetail(
+            transaction_id=db_transaction.transaction_id,
+            product_id=item.product_id,
+            slot_stock_id=slot_stock.slot_stock_id,
+            slot_id=item.slot_id,
+            amount=item.amount,
+        )
+        session.add(db_detail)
+        session.flush()
+
+        response_details.append(
+            {
+                "transaction_detail_id": db_detail.transaction_detail_id,
+                "slot_stock_id": slot_stock.slot_stock_id,
+                "product_id": item.product_id,
+                "slot_id": item.slot_id,
+                "amount": item.amount,
+                "lot_id": slot_stock.lot_id,
+                "expired_at": slot_stock.expired_at,
+            }
+        )
+
+    session.commit()
+
+    return {
+        "transaction_id": db_transaction.transaction_id,
+        "activity": db_transaction.activity,
+        "status": db_transaction.status,
+        "processed_items": len(response_details),
+        "details": response_details,
+    }
 
 # ==========================================
 # 3. Endpoints สำหรับรูปภาพ (Snapshots)
