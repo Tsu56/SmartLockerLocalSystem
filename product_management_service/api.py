@@ -1,13 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlmodel import Session, select
 from typing import List
 from datetime import datetime, timezone
 import requests
 import os
+import time
 from dotenv import load_dotenv
 
 # นำเข้า models และ schema ที่เราสร้างไว้
-from database import get_session, models, schema
+from database import get_session, models, schema, engine
 from getkey import get_internal_shared_secret
 
 from product_sync_agent import perform_product_sync
@@ -15,8 +16,157 @@ from product_sync_agent import perform_product_sync
 load_dotenv()
 INTERNAL_SHARED_SECRET = get_internal_shared_secret()
 DEVICE_SERVICE_URL = "http://device-identity-service:8000"
+CLOUD_SERVER_URL = os.getenv("SERVER_URL", "")
 
 router = APIRouter(prefix="/locker", tags=["Locker Operations"])
+
+# ==========================================
+# Helper Functions สำหรับ Sync
+# ==========================================
+
+def get_cloud_auth_headers():
+    """ดึง Auth Headers จาก Device Identity Service เพื่อใช้ยืนยันตัวตนกับ Cloud Server"""
+    try:
+        headers = {"X-Internal-Secret": INTERNAL_SHARED_SECRET}
+        response = requests.get(
+            f"{DEVICE_SERVICE_URL}/device/internal/auth-headers",
+            headers=headers,
+            timeout=5
+        )
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except Exception as e:
+        print(f"📡 [Transaction Sync] Device Service Connection Error: {e}")
+        return None
+
+
+def sync_transaction_to_server(transaction_id: int, max_retries: int = 3):
+    """
+    Sync Transaction, TransactionDetails และ SlotStock ขึ้น Cloud Server
+    
+    Args:
+        transaction_id: ID ของ Transaction ที่ต้องการ sync
+        max_retries: จำนวนครั้งที่จะลองใหม่ถ้า sync ไม่สำเร็จ
+    """
+    print(f"🔄 [Transaction Sync] Starting sync for transaction_id={transaction_id}")
+    
+    # Get auth headers
+    auth_headers = get_cloud_auth_headers()
+    if not auth_headers:
+        print(f"❌ [Transaction Sync] Cannot get auth headers")
+        return {"status": "error", "message": "Auth headers unavailable"}
+    
+    # Retry logic
+    for attempt in range(max_retries):
+        try:
+            with Session(engine) as session:
+                # 1. ดึงข้อมูล Transaction
+                transaction = session.get(models.Transaction, transaction_id)
+                if not transaction:
+                    print(f"❌ [Transaction Sync] Transaction {transaction_id} not found")
+                    return {"status": "error", "message": "Transaction not found"}
+                
+                # ถ้า sync แล้ว ไม่ต้อง sync ซ้ำ
+                if transaction.synced_at:
+                    print(f"✅ [Transaction Sync] Transaction {transaction_id} already synced")
+                    return {"status": "already_synced", "synced_at": transaction.synced_at}
+                
+                # 2. ดึง TransactionDetails
+                details = session.exec(
+                    select(models.TransactionDetail)
+                    .where(models.TransactionDetail.transaction_id == transaction_id)
+                ).all()
+                
+                # 3. รวบรวม SlotStock IDs ที่เกี่ยวข้อง
+                slot_stock_ids = list(set(detail.slot_stock_id for detail in details))
+                slot_stocks = session.exec(
+                    select(models.SlotStock)
+                    .where(models.SlotStock.slot_stock_id.in_(slot_stock_ids))
+                ).all()
+                
+                # 4. เตรียมข้อมูลสำหรับส่งไปยัง Server
+                transaction_payload = {
+                    "transaction": {
+                        "user_id": transaction.user_id,
+                        "activity": transaction.activity,
+                        "status": transaction.status,
+                        "created_at": transaction.created_at.isoformat(),
+                    },
+                    "details": [
+                        {
+                            "product_id": detail.product_id,
+                            "slot_id": detail.slot_id,
+                            "slot_stock_id": detail.slot_stock_id,
+                            "amount": detail.amount,
+                            "created_at": detail.created_at.isoformat(),
+                        }
+                        for detail in details
+                    ],
+                    "slot_stocks": [
+                        {
+                            "slot_stock_id": stock.slot_stock_id,
+                            "lot_id": stock.lot_id,
+                            "product_id": stock.product_id,
+                            "slot_id": stock.slot_id,
+                            "amount": stock.amount,
+                            "expired_at": stock.expired_at.isoformat() if stock.expired_at else None,
+                            "created_at": stock.created_at.isoformat() if stock.created_at else None,
+                            "updated_at": stock.updated_at.isoformat() if stock.updated_at else None,
+                        }
+                        for stock in slot_stocks
+                    ],
+                }
+                
+                # 5. ส่งไปยัง Cloud Server
+                sync_url = f"{CLOUD_SERVER_URL}/transaction/sync/device-transaction"
+                response = requests.post(
+                    sync_url,
+                    json=transaction_payload,
+                    headers=auth_headers,
+                    timeout=30
+                )
+                
+                if response.status_code == 200 or response.status_code == 201:
+                    sync_result = response.json()
+                    
+                    # 6. อัปเดต synced_at และ server_transaction_id
+                    transaction.synced_at = datetime.now(timezone.utc)
+                    if "transaction_id" in sync_result:
+                        transaction.server_transaction_id = sync_result["transaction_id"]
+                    
+                    session.add(transaction)
+                    session.commit()
+                    
+                    print(f"✅ [Transaction Sync] Successfully synced transaction_id={transaction_id}")
+                    return {
+                        "status": "success",
+                        "transaction_id": transaction_id,
+                        "server_transaction_id": transaction.server_transaction_id,
+                        "synced_at": transaction.synced_at
+                    }
+                else:
+                    print(f"⚠️ [Transaction Sync] Server returned {response.status_code}: {response.text}")
+                    if attempt < max_retries - 1:
+                        time.sleep(2 ** attempt)  # Exponential backoff
+                        continue
+                    return {
+                        "status": "error",
+                        "message": f"Server error: {response.status_code}",
+                        "detail": response.text
+                    }
+                    
+        except requests.RequestException as e:
+            print(f"⚠️ [Transaction Sync] Network error (attempt {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)  # Exponential backoff
+                continue
+            return {"status": "error", "message": f"Network error: {str(e)}"}
+        except Exception as e:
+            print(f"❌ [Transaction Sync] Unexpected error: {e}")
+            return {"status": "error", "message": f"Unexpected error: {str(e)}"}
+    
+    return {"status": "error", "message": "Max retries exceeded"}
 
 # ==========================================
 # 1. Endpoints สำหรับหน้าจอ UI (ดึงข้อมูล)
@@ -99,6 +249,7 @@ def create_transaction(transaction: schema.TransactionCreate, session: Session =
 def add_transaction_detail(
     transaction_id: int, 
     detail: schema.TransactionDetailCreate, 
+    background_tasks: BackgroundTasks,
     session: Session = Depends(get_session)
 ):
     """
@@ -125,7 +276,6 @@ def add_transaction_detail(
                 detail=f"Not enough stock. Available: {stock.amount}, Requested: {detail.amount}"
             )
         stock.amount -= detail.amount
-        stock.updated_at = datetime.now(timezone.utc)
         
     elif transaction.activity == "restock":
         # (Optional) ตรวจสอบ Capacity ของช่องจาก device_identity_service
@@ -149,7 +299,6 @@ def add_transaction_detail(
             pass
         
         stock.amount += detail.amount
-        stock.updated_at = datetime.now(timezone.utc)
 
     # 4. บันทึกข้อมูล Detail และอัปเดต Stock
     db_detail = models.TransactionDetail.model_validate(detail)
@@ -158,11 +307,19 @@ def add_transaction_detail(
     
     session.commit()
     session.refresh(db_detail)
+    
+    # 5. Sync กับ Server ใน Background
+    background_tasks.add_task(sync_transaction_to_server, transaction_id)
+    
     return db_detail
 
 
 @router.post("/restock", response_model=schema.RestockPublic)
-def restock_items(restock_data: schema.RestockCreate, session: Session = Depends(get_session)):
+def restock_items(
+    restock_data: schema.RestockCreate, 
+    background_tasks: BackgroundTasks,
+    session: Session = Depends(get_session)
+):
     """
     เติมยาแบบยกตะกร้าในคำขอเดียว
     - สร้าง Transaction (activity=restock)
@@ -248,7 +405,6 @@ def restock_items(restock_data: schema.RestockCreate, session: Session = Depends
 
         if slot_stock:
             slot_stock.amount += item.amount
-            slot_stock.updated_at = datetime.now(timezone.utc)
         else:
             slot_stock = models.SlotStock(
                 lot_id=item.lot_id,
@@ -283,6 +439,9 @@ def restock_items(restock_data: schema.RestockCreate, session: Session = Depends
         )
 
     session.commit()
+    
+    # Sync กับ Server ใน Background
+    background_tasks.add_task(sync_transaction_to_server, db_transaction.transaction_id)
 
     return {
         "transaction_id": db_transaction.transaction_id,
@@ -322,8 +481,8 @@ def get_transaction_history(transaction_id: int, session: Session = Depends(get_
 # 4. Endpoints สำหรับ Manual Sync (Trigger)
 # ==========================================
 
-@router.post("/sync/manual")
-def trigger_manual_sync():
+@router.post("/sync/manual-products")
+def trigger_manual_product_sync():
     """
     สั่งให้ตู้ทำการ Sync ข้อมูลสินค้าจาก Cloud ทันทีโดยไม่ต้องรอรอบเวลา
     ใช้สำหรับทดสอบ หรือจังหวะที่ต้องการข้อมูลล่าสุดทันที
@@ -337,3 +496,49 @@ def trigger_manual_sync():
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
             detail=result["message"]
         )
+
+
+@router.post("/sync/manual-transactions")
+def trigger_manual_transaction_sync(session: Session = Depends(get_session)):
+    """
+    Sync รายการที่ยังไม่ได้ sync (synced_at = NULL) ทั้งหมดขึ้น Cloud Server
+    ใช้สำหรับกรณีที่ offline แล้วกลับมา online ใหม่
+    """
+    # ค้นหา Transaction ที่ยังไม่ได้ sync
+    pending_transactions = session.exec(
+        select(models.Transaction)
+        .where(models.Transaction.synced_at.is_(None))
+        .order_by(models.Transaction.created_at)
+    ).all()
+    
+    if not pending_transactions:
+        return {
+            "status": "success",
+            "message": "No pending transactions to sync",
+            "synced_count": 0
+        }
+    
+    results = []
+    success_count = 0
+    error_count = 0
+    
+    for transaction in pending_transactions:
+        result = sync_transaction_to_server(transaction.transaction_id, max_retries=1)
+        results.append({
+            "transaction_id": transaction.transaction_id,
+            "status": result.get("status"),
+            "message": result.get("message", "")
+        })
+        
+        if result.get("status") == "success":
+            success_count += 1
+        else:
+            error_count += 1
+    
+    return {
+        "status": "completed",
+        "total_pending": len(pending_transactions),
+        "synced_count": success_count,
+        "error_count": error_count,
+        "details": results
+    }
