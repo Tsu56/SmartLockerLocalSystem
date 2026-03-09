@@ -125,6 +125,7 @@ def add_transaction_detail(
                 detail=f"Not enough stock. Available: {stock.amount}, Requested: {detail.amount}"
             )
         stock.amount -= detail.amount
+        stock.updated_at = datetime.now(timezone.utc)
         
     elif transaction.activity == "restock":
         # (Optional) ตรวจสอบ Capacity ของช่องจาก device_identity_service
@@ -148,6 +149,7 @@ def add_transaction_detail(
             pass
         
         stock.amount += detail.amount
+        stock.updated_at = datetime.now(timezone.utc)
 
     # 4. บันทึกข้อมูล Detail และอัปเดต Stock
     db_detail = models.TransactionDetail.model_validate(detail)
@@ -246,6 +248,7 @@ def restock_items(restock_data: schema.RestockCreate, session: Session = Depends
 
         if slot_stock:
             slot_stock.amount += item.amount
+            slot_stock.updated_at = datetime.now(timezone.utc)
         else:
             slot_stock = models.SlotStock(
                 lot_id=item.lot_id,

@@ -40,7 +40,7 @@ class SlotStock(SlotStockBase, table=True):
     amount: int = Field(default=0, description="จำนวนสินค้าที่มีอยู่")
     expired_at: Optional[date] = Field(default=None, description="วันหมดอายุของล็อตนี้")
     
-    created_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
     deleted_at: Optional[datetime] = None
 
