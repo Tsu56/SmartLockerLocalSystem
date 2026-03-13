@@ -117,9 +117,11 @@ def sync_transaction_to_server(transaction_id: int, max_retries: int = 3):
                         for stock in slot_stocks
                     ],
                 }
+
+                print(f"DEBUG {transaction_payload}")
                 
                 # 5. ส่งไปยัง Cloud Server
-                sync_url = f"{CLOUD_SERVER_URL}/transaction/sync/device-transaction"
+                sync_url = f"{CLOUD_SERVER_URL}/transaction/createTransactionFromLocker"
                 response = requests.post(
                     sync_url,
                     json=transaction_payload,
@@ -129,6 +131,7 @@ def sync_transaction_to_server(transaction_id: int, max_retries: int = 3):
                 
                 if response.status_code == 200 or response.status_code == 201:
                     sync_result = response.json()
+                    print(f"DEBUG Sync Result: {sync_result}")
                     
                     # 6. อัปเดต synced_at และ server_transaction_id
                     transaction.synced_at = datetime.now(timezone.utc)
@@ -197,6 +200,9 @@ def get_slots_with_stock(session: Session = Depends(get_session)):
             status_code=500,
             detail=f"Error connecting to device service: {str(e)}"
         )
+
+    # แสดงเฉพาะ slot ที่ยังไม่ถูกลบ (soft delete)
+    slots = [slot for slot in slots if slot.get("deleted_at") is None]
     
     result = []
     for slot in slots:
@@ -217,6 +223,7 @@ def get_slots_with_stock(session: Session = Depends(get_session)):
             
         result.append({
             "slot_id": slot["id"],
+            "slot_id_from_server": slot["slot_id"],
             "slot_status": slot["slot_status"],
             "capacity": slot["capacity"],
             "stocks": stocks_data

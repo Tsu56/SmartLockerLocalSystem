@@ -9,7 +9,7 @@ from kivymd.uix.button import MDRaisedButton, MDTextButton
 from kivymd.uix.textfield import MDTextField
 from controller.id_card_controller import IDCardController, Clock
 import json
-from controller.restock_controller import RestockScreen, CartItemWidget, MDScreen, MDDataTable, MDBoxLayout
+from controller.restock_controller import RestockScreen, MDScreen, MDDataTable, MDBoxLayout
 from controller.dispense_controller import DispenseScreen
 from kivy.network.urlrequest import UrlRequest
 

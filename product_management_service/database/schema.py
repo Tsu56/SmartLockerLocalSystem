@@ -134,6 +134,7 @@ class StockDetailPublic(SQLModel):
 class SlotWithStocksPublic(SQLModel):
     """ข้อมูลช่อง 1 ช่อง พร้อมสต็อกทั้งหมดข้างใน (ใช้สำหรับหน้าจอ Dispense)"""
     slot_id: int
+    slot_id_from_server: int
     slot_status: str
     capacity: int
     stocks: List[StockDetailPublic] = []

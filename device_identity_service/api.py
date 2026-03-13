@@ -72,7 +72,10 @@ def get_all_slots(x_internal_secret: str = Header(None, alias="X-Internal-Secret
         )
 
     with Session(engine) as session:
-        slots = session.exec(select(Slot)).all()
+        # คืนเฉพาะ slot ที่ยังไม่ถูก soft-delete
+        slots = session.exec(
+            select(Slot).where(Slot.deleted_at.is_(None))
+        ).all()
         return [
             {
                 "slot_id": slot.slot_id,
@@ -81,7 +84,8 @@ def get_all_slots(x_internal_secret: str = Header(None, alias="X-Internal-Secret
                 "capacity": slot.capacity,
                 "id": slot.id,
                 "created_at": slot.created_at,
-                "updated_at": slot.updated_at
+                "updated_at": slot.updated_at,
+                "deleted_at": slot.deleted_at,
             }
             for slot in slots
         ]

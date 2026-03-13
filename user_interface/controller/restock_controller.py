@@ -22,13 +22,13 @@ import requests
 API_BASE_URL = "http://localhost:5000/api/product/locker"
 
 
-class MedicineRowWidget(MDBoxLayout):
+class RestockMedicineRowWidget(MDBoxLayout):
     med_id = StringProperty("")
     med_name = StringProperty("")
     select_callback = ObjectProperty(None)
 
 
-class CartItemWidget(MDBoxLayout):
+class RestockCartItemWidget(MDBoxLayout):
     product_id = StringProperty("")
     product_name = StringProperty("")
     slot = StringProperty("")
@@ -192,6 +192,12 @@ class RestockScreen(MDScreen):
         self.render_medicine_rows()
         self.refresh_cart_view()
 
+    def on_pre_enter(self, *args):
+        """รีเฟรชข้อมูลทุกครั้งก่อนเข้าหน้า restock"""
+        self.load_data_from_api()
+        self.render_medicine_rows()
+        return super().on_pre_enter(*args)
+
     def go_home(self):
         app = MDApp.get_running_app()
         if app and hasattr(app, "change_screen"):
@@ -233,9 +239,11 @@ class RestockScreen(MDScreen):
                     
                     self.slots_data.append({
                         "slot": slot["slot_id"],
+                        "slot_id_from_server": slot.get("slot_id_from_server"),
                         "capacity": slot.get("capacity", 50),
                         "products": products_in_slot
                     })
+                
             else:
                 toast(f"ไม่สามารถดึงข้อมูลช่องได้: {slots_response.status_code}")
                 
@@ -249,14 +257,14 @@ class RestockScreen(MDScreen):
                 {"id": "MED002", "name": "แอสไพริน 100mg"},
             ]
             self.slots_data = [
-                {"slot": 1, "capacity": 50, "products": []},
-                {"slot": 2, "capacity": 50, "products": []},
+                {"slot": 1, "slot_id_from_server": 1, "capacity": 50, "products": []},
+                {"slot": 2, "slot_id_from_server": 3, "capacity": 50, "products": []},
             ]
 
     def render_medicine_rows(self):
         self.ids.medicine_rows.clear_widgets()
         for medicine in self.medicines:
-            row = MedicineRowWidget(
+            row = RestockMedicineRowWidget(
                 med_id=medicine["id"],
                 med_name=medicine["name"],
                 select_callback=lambda med=medicine: self.open_add_dialog(med),
@@ -635,9 +643,15 @@ class RestockScreen(MDScreen):
             self.quantity_input.helper_text = f"เกินพื้นที่ว่าง (เติมได้สูงสุด {available})"
             return
 
+        slot_id = self.selected_slot.get("slot_id_from_server")
+        slot_label = self.selected_slot.get("slot")
+
+        print(f"slot_id: {slot_id}")
+
         self._append_cart_item(
             self.selected_medicine,
-            self.selected_slot["slot"],
+            slot_id,
+            slot_label,
             quantity,
             lot_id,
             expired_at_text,
@@ -649,12 +663,13 @@ class RestockScreen(MDScreen):
         if self.add_dialog:
             self.add_dialog.dismiss()
 
-    def _append_cart_item(self, medicine, slot_number, quantity, lot_id, expired_at):
+    def _append_cart_item(self, medicine, slot_id, slot_label, quantity, lot_id, expired_at):
         self.cart_items.append(
             {
                 "id": medicine["id"],
                 "name": medicine["name"],
-                "slot": slot_number,
+                "slot_id": slot_id,
+                "slot_label": slot_label,
                 "quantity": quantity,
                 "lot_id": lot_id,
                 "expired_at": expired_at,
@@ -690,7 +705,7 @@ class RestockScreen(MDScreen):
             for i, item in enumerate(self.cart_items):
                 if (
                     item.get("id") == cart_item.get("id")
-                    and item.get("slot") == cart_item.get("slot")
+                    and item.get("slot_id") == cart_item.get("slot_id")
                     and item.get("quantity") == cart_item.get("quantity")
                 ):
                     removed_item = self.cart_items.pop(i)
@@ -710,7 +725,7 @@ class RestockScreen(MDScreen):
 
     def _revert_slot_restock(self, cart_item):
         for slot in self.slots_data:
-            if slot["slot"] != cart_item["slot"]:
+            if slot["slot"] != cart_item["slot_label"]:
                 continue
             for product in slot["products"]:
                 if product["id"] == cart_item["id"]:
@@ -723,10 +738,10 @@ class RestockScreen(MDScreen):
         self.ids.cart_list.clear_widgets()
 
         for item in self.cart_items:
-            widget = CartItemWidget(
+            widget = RestockCartItemWidget(
                 product_name=item["name"],
                 product_id=item["id"],
-                slot=f"ช่อง {item['slot']}",
+                slot=f"ช่อง {item['slot_label']}",
                 quantity=str(item["quantity"]),
                 lot_id=item.get("lot_id", ""),
                 expired_at=item.get("expired_at", ""),
@@ -815,7 +830,7 @@ class RestockScreen(MDScreen):
             "items": [
                 {
                     "product_id": item["id"],
-                    "slot_id": item["slot"],
+                    "slot_id": item["slot_id"],
                     "amount": item["quantity"],
                     "lot_id": item["lot_id"],
                     "expired_at": item["expired_at"],
