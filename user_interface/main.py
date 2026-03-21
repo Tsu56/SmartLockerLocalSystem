@@ -60,6 +60,8 @@ GATEWAY_URL = "http://localhost:5000/api"
 
 AUTH_CARD_URL = f"{GATEWAY_URL}/auth/auth/login/smartcard"
 AUTH_PWD_URL = f"{GATEWAY_URL}/auth/auth/login/password"
+QR_TASK_RESOLVE_URL = f"{GATEWAY_URL}/product/locker/qr-tasks/resolve"
+QR_TASK_COMPLETE_BASE_URL = f"{GATEWAY_URL}/product/locker/qr-tasks"
 
 DEVICE_ACTIVATE_URL = f"{GATEWAY_URL}/identity/device/activate"
 DEVICE_INFO_URL = f"{GATEWAY_URL}/identity/device/info"
@@ -101,6 +103,7 @@ class HomeScreen(MDScreen):
             self.ids.btn_restock.disabled = False
         else:
             self.ids.btn_restock.disabled = True
+        self.ids.btn_qr_task.disabled = not bool(app.user_id)
 
 class SmartLockerApp(MDApp):
     current_screen_name = StringProperty("main_screen")
@@ -111,6 +114,7 @@ class SmartLockerApp(MDApp):
     is_activated = BooleanProperty(False)
     user_id = StringProperty("")
     user_permissions = DictProperty({"can_withdraw": False, "can_restock": False})
+    current_qr_task = DictProperty({})
 
     status_error_color = [0.906, 0.298, 0.235, 1]      # Red
     status_success_color = [0.18, 0.8, 0.443, 1]    # Green
@@ -358,8 +362,92 @@ class SmartLockerApp(MDApp):
         # เคลียร์ค่าต่างๆ ถ้าจำเป็น
         self.user_id = ""
         self.user_permissions = {"can_withdraw": False, "can_restock": False}
+        self.current_qr_task = {}
         self.change_screen("main_screen")
         self.show_toast("ออกจากระบบเรียบร้อยแล้ว")
+
+    def go_to_qr_task_scan(self):
+        if not self.user_id:
+            self.show_toast("กรุณาเข้าสู่ระบบก่อน")
+            return
+        self.change_screen("qr_scan_screen")
+
+    def handle_qr_submit(self, qr_raw_data):
+        qr_token = (qr_raw_data or "").strip()
+        if not qr_token:
+            self.show_toast("กรุณากรอก/สแกน QR Code")
+            return
+
+        payload = json.dumps({
+            "qr_token": qr_token,
+            "user_id": self.user_id,
+        })
+        headers = {"Content-type": "application/json", "Accept": "application/json"}
+
+        UrlRequest(
+            QR_TASK_RESOLVE_URL,
+            req_body=payload,
+            req_headers=headers,
+            on_success=self._on_qr_task_resolve_success,
+            on_failure=self._on_qr_task_resolve_failed,
+            on_error=self._on_qr_task_resolve_error,
+            method="POST",
+            timeout=10,
+        )
+
+    def _on_qr_task_resolve_success(self, request, result):
+        if not isinstance(result, dict):
+            self.show_toast("รูปแบบข้อมูล QR task ไม่ถูกต้อง")
+            return
+
+        task_type = (result.get("task_type") or "").strip().lower()
+        self.current_qr_task = result
+
+        if task_type == "restock":
+            screen = self.root.get_screen("restock_screen")
+            screen.load_qr_task(result)
+            self.change_screen("restock_screen")
+            self.show_toast("โหลดรายการเติมจาก QR สำเร็จ")
+            return
+
+        if task_type == "dispense":
+            screen = self.root.get_screen("dispense_screen")
+            screen.load_qr_task(result)
+            self.change_screen("dispense_screen")
+            self.show_toast("โหลดรายการเบิกจาก QR สำเร็จ")
+            return
+
+        self.show_toast(f"ประเภทรายการไม่รองรับ: {task_type or '-'}")
+
+    def _on_qr_task_resolve_failed(self, request, result):
+        detail = "ไม่สามารถตรวจสอบ QR task ได้"
+        if isinstance(result, dict):
+            detail = result.get("detail", detail)
+        self.show_toast(str(detail))
+
+    def _on_qr_task_resolve_error(self, request, error):
+        self.show_toast("Network Error: Cannot resolve QR task")
+        print(f"DEBUG: QR resolve error - {error}")
+
+    def complete_active_qr_task(self):
+        task_id = self.current_qr_task.get("task_id") if isinstance(self.current_qr_task, dict) else None
+        if not task_id:
+            return
+
+        url = f"{QR_TASK_COMPLETE_BASE_URL}/{task_id}/complete"
+        payload = {"user_id": self.user_id}
+        try:
+            req = UrlRequest(
+                url,
+                req_body=json.dumps(payload),
+                req_headers={"Content-type": "application/json", "Accept": "application/json"},
+                method="POST",
+                timeout=8,
+            )
+            _ = req
+            self.current_qr_task = {}
+        except Exception as e:
+            print(f"⚠️ Failed to complete QR task {task_id}: {e}")
     
     def change_screen(self, screen_name):
         self.root.current = screen_name

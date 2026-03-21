@@ -203,6 +203,53 @@ class RestockScreen(MDScreen):
         if app and hasattr(app, "change_screen"):
             app.change_screen("home_screen")
 
+    def load_qr_task(self, task_payload):
+        """เติมตะกร้าอัตโนมัติจาก QR task"""
+        self.cart_items.clear()
+        self.load_data_from_api()
+
+        items = task_payload.get("items", []) if isinstance(task_payload, dict) else []
+        if not isinstance(items, list):
+            items = []
+
+        medicine_by_id = {m["id"]: m for m in self.medicines}
+        slot_by_server_id = {s.get("slot_id_from_server"): s for s in self.slots_data}
+
+        for item in items:
+            try:
+                product_id = item.get("product_id")
+                slot_id = int(item.get("slot_id"))
+                qty = int(item.get("amount") or 0)
+            except Exception:
+                continue
+
+            if qty <= 0:
+                continue
+
+            medicine = medicine_by_id.get(product_id) or {
+                "id": product_id,
+                "name": item.get("product_name") or product_id,
+            }
+            slot_info = slot_by_server_id.get(slot_id)
+            if not slot_info:
+                continue
+
+            lot_id = item.get("lot_id") or ""
+            expired_at = item.get("expired_at") or ""
+
+            self._append_cart_item(
+                medicine,
+                slot_id,
+                slot_info.get("slot"),
+                qty,
+                lot_id,
+                expired_at,
+            )
+            self._apply_slot_restock(medicine, slot_info, qty)
+
+        self.refresh_cart_view()
+        self.render_medicine_rows()
+
     def load_data_from_api(self):
         """ดึงข้อมูลยาและช่องจาก API"""
         try:
@@ -864,4 +911,6 @@ class RestockScreen(MDScreen):
         self.load_data_from_api()  # รีโหลดข้อมูลจาก API
         self.refresh_cart_view()
         self.render_medicine_rows()
+        if app and hasattr(app, "complete_active_qr_task"):
+            app.complete_active_qr_task()
         toast("บันทึกการเติมยาสำเร็จ")

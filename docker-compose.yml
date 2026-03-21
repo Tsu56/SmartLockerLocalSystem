@@ -15,6 +15,9 @@ services:
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
       - SERVER_URL=${SERVER_URL}
+      - MQTT_ENABLED=${MQTT_ENABLED:-false}
+      - MQTT_BROKER_PORT=${MQTT_BROKER_PORT:-8883}
+      - MQTT_KEEPALIVE_SECONDS=${MQTT_KEEPALIVE_SECONDS:-60}
     restart: always
     networks:
       - smart-locker-network
@@ -37,6 +40,9 @@ services:
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
       - SERVER_URL=${SERVER_URL}
+      - MQTT_ENABLED=${MQTT_ENABLED:-false}
+      - MQTT_BROKER_PORT=${MQTT_BROKER_PORT:-8883}
+      - MQTT_KEEPALIVE_SECONDS=${MQTT_KEEPALIVE_SECONDS:-60}
     restart: always
     networks:
       - smart-locker-network
@@ -59,6 +65,9 @@ services:
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
       - SERVER_URL=${SERVER_URL}
+      - MQTT_ENABLED=${MQTT_ENABLED:-false}
+      - MQTT_BROKER_PORT=${MQTT_BROKER_PORT:-8883}
+      - MQTT_KEEPALIVE_SECONDS=${MQTT_KEEPALIVE_SECONDS:-60}
     restart: always
     networks:
       - smart-locker-network
@@ -81,6 +90,9 @@ services:
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
       - SERVER_URL=${SERVER_URL}
+      - MQTT_ENABLED=${MQTT_ENABLED:-false}
+      - MQTT_BROKER_PORT=${MQTT_BROKER_PORT:-8883}
+      - MQTT_KEEPALIVE_SECONDS=${MQTT_KEEPALIVE_SECONDS:-60}
     restart: always
     networks:
       - smart-locker-network

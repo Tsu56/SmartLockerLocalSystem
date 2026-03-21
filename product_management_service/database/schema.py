@@ -61,7 +61,7 @@ class TransactionPublic(TransactionBase):
 class TransactionDetailBase(SQLModel):
     transaction_id: int = Field(description="ID ของ Transaction หลัก")
     product_id: str = Field(description="ID ของสินค้าที่เบิก/เติม")
-    slot_stock_id: int = Field(description="ID ของสต็อกจาก Server (unique index)")
+    slot_stock_id: int = Field(description="ID ของสต็อกของ local")
     slot_id: int = Field(description="ID ของช่องตู้")
     amount: int = Field(default=0, description="จำนวนที่เบิกหรือเติม")
 
@@ -142,3 +142,31 @@ class SlotWithStocksPublic(SQLModel):
 class TransactionWithDetailsPublic(TransactionPublic):
     """ข้อมูลประวัติการทำรายการ พร้อมรายละเอียดรายการทั้งหมด"""
     details: List[TransactionDetailPublic] = []
+
+
+class QRTaskItemPublic(SQLModel):
+    product_id: str
+    product_name: Optional[str] = None
+    slot_id: int
+    amount: int
+    lot_id: Optional[str] = None
+    expired_at: Optional[str] = None
+    slot_stock_id: Optional[int] = None
+
+
+class QRTaskResolveRequest(SQLModel):
+    qr_token: str = Field(description="ข้อมูล QR code ที่สแกนได้")
+    user_id: str = Field(description="ผู้ใช้งานที่กำลัง login ที่ตู้")
+
+
+class QRTaskResolvePublic(SQLModel):
+    task_id: str
+    task_type: str
+    assigned_user_id: str
+    status: str
+    expires_at: Optional[datetime] = None
+    items: List[QRTaskItemPublic] = []
+
+
+class QRTaskCompleteRequest(SQLModel):
+    user_id: str

@@ -222,6 +222,77 @@ class DispenseScreen(MDScreen):
         if app and hasattr(app, "change_screen"):
             app.change_screen("home_screen")
 
+    def _resolve_slot_stock_id(self, slot_info, product_id, lot_id, fallback_slot_stock_id=None):
+        """หา slot_stock_id ของ local จาก lot_id ภายใน slot เดียวกัน"""
+        if fallback_slot_stock_id not in (None, ""):
+            return fallback_slot_stock_id
+
+        if not isinstance(slot_info, dict):
+            return None
+
+        for product in slot_info.get("products", []):
+            if product.get("id") != product_id:
+                continue
+            for lot in product.get("lots", []):
+                if str(lot.get("lot_id") or "") == str(lot_id or ""):
+                    return lot.get("slot_stock_id")
+
+        return None
+
+    def load_qr_task(self, task_payload):
+        """เติมตะกร้าอัตโนมัติจาก QR task"""
+        self.cart_items.clear()
+        self.load_data_from_api()
+
+        items = task_payload.get("items", []) if isinstance(task_payload, dict) else []
+        if not isinstance(items, list):
+            items = []
+
+        medicine_by_id = {m["id"]: m for m in self.medicines}
+        slot_by_server_id = {s.get("slot_id_from_server"): s for s in self.slots_data}
+
+        for item in items:
+            try:
+                product_id = item.get("product_id")
+                slot_id = int(item.get("slot_id"))
+                qty = int(item.get("amount") or 0)
+            except Exception:
+                continue
+
+            if qty <= 0:
+                continue
+
+            medicine = medicine_by_id.get(product_id) or {
+                "id": product_id,
+                "name": item.get("product_name") or product_id,
+            }
+            slot_info = slot_by_server_id.get(slot_id)
+            if not slot_info:
+                continue
+
+            lot_id = item.get("lot_id") or ""
+            expired_at = item.get("expired_at") or ""
+            slot_stock_id = self._resolve_slot_stock_id(
+                slot_info,
+                product_id,
+                lot_id,
+                item.get("slot_stock_id"),
+            )
+
+            self._append_cart_item(
+                medicine,
+                slot_id,
+                slot_info.get("slot"),
+                qty,
+                lot_id,
+                expired_at,
+                slot_stock_id,
+            )
+            self._apply_slot_dispense(medicine, slot_info, qty)
+
+        self.refresh_cart_view()
+        self.render_medicine_rows()
+
     def load_data_from_api(self):
         """ดึงข้อมูลยาและช่องจาก API"""
         try:
@@ -761,6 +832,9 @@ class DispenseScreen(MDScreen):
             toast("ตะกร้าว่างเปล่า")
             return
 
+        # บังคับใช้ฟอนต์ Thai ก่อนสร้าง MDDialog เพื่อให้ title ภาษาไทยแสดงผลถูกต้อง
+        self._apply_thai_to_theme()
+
         # ตรวจสอบว่าทุกรายการมีข้อมูลครบถ้วน
         for item in self.cart_items:
             if not item.get("lot_id"):
@@ -830,13 +904,26 @@ class DispenseScreen(MDScreen):
 
             # 2. เพิ่ม Transaction Details แต่ละรายการ
             for item in self.cart_items:
-                # ต้องหา slot_stock_id จากข้อมูลที่มี
-                # ในกรณีนี้ต้องดึงจาก API slots เพื่อหา slot_stock_id
+                slot_info = next(
+                    (s for s in self.slots_data if s.get("slot_id_from_server") == item.get("slot_id")),
+                    None,
+                )
+                slot_stock_id = self._resolve_slot_stock_id(
+                    slot_info,
+                    item.get("id"),
+                    item.get("lot_id"),
+                    item.get("slot_stock_id"),
+                )
+
+                if slot_stock_id in (None, ""):
+                    toast(f"ไม่พบ slot_stock_id ของ LOT {item.get('lot_id', '-')}")
+                    continue
+
                 detail_payload = {
                     "transaction_id": transaction_id,
                     "product_id": item["id"],
                     "slot_id": item["slot_id"],
-                    "slot_stock_id": item.get("slot_stock_id", 0),  # ต้องส่งค่าจริงจาก API
+                    "slot_stock_id": slot_stock_id,
                     "amount": item["quantity"]
                 }
 
@@ -859,4 +946,6 @@ class DispenseScreen(MDScreen):
         self.load_data_from_api()  # รีโหลดข้อมูลจาก API
         self.refresh_cart_view()
         self.render_medicine_rows()
+        if app and hasattr(app, "complete_active_qr_task"):
+            app.complete_active_qr_task()
         toast("บันทึกการเบิกยาสำเร็จ")
