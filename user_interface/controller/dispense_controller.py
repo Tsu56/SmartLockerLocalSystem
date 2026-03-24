@@ -276,7 +276,7 @@ class DispenseScreen(MDScreen):
                 slot_info,
                 product_id,
                 lot_id,
-                item.get("slot_stock_id"),
+                None,
             )
 
             self._append_cart_item(

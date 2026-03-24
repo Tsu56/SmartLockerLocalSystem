@@ -143,7 +143,7 @@ def process_user_sync(session, u_data):
     user.last_name = user_info.get("last_name")
     user.hashed_password = user_info.get("password")
     # เข้ารหัส citizen_id_encrypted ก่อนบันทึกลงฐานข้อมูล
-    raw_citizen_id = user_info.get("citizen_id") or user_info.get("citizen_id_encrypted")
+    raw_citizen_id = user_info.get("citizen_id")
     if raw_citizen_id:
         # เข้ารหัสสำหรับเก็บ (AES-Fernet)
         user.citizen_id_encrypted = encrypt_data(str(raw_citizen_id))
@@ -463,7 +463,9 @@ def login_with_password(login_data: UserLogin, session: SessionDep):
 def login_with_smartcard(login_in: SmartCardLogin, session: SessionDep):
     """เข้าสู่ระบบด้วยการเสียบบัตรประชาชน (ใช้ Blind Index ค้นหา)"""
     raw_citizen_id = login_in.citizen_id.strip()
+    print(raw_citizen_id)
     search_hash = get_search_hash(raw_citizen_id)
+    print(search_hash)
 
     # ค้นหาโดยตรงผ่าน Hash Index ไม่ต้องดึงทุกคนมาวนลูปถอดรหัส
     statement = select(User).where(

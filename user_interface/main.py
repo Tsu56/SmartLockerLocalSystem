@@ -1,4 +1,5 @@
 import os
+import subprocess
 from kivymd.app import MDApp
 from kivy.lang import Builder
 from kivymd.toast import toast
@@ -372,7 +373,17 @@ class SmartLockerApp(MDApp):
             return
         self.change_screen("qr_scan_screen")
 
+    def ensure_english_keyboard_layout(self):
+        """Best effort: switch active keyboard layout to English on Linux."""
+        try:
+            subprocess.run(["setxkbmap", "us"], check=False)
+        except Exception as e:
+            print(f"⚠️ Unable to switch keyboard layout to English: {e}")
+
     def handle_qr_submit(self, qr_raw_data):
+        if self.current_screen_name != "qr_scan_screen":
+            return
+
         qr_token = (qr_raw_data or "").strip()
         if not qr_token:
             self.show_toast("กรุณากรอก/สแกน QR Code")
@@ -450,6 +461,8 @@ class SmartLockerApp(MDApp):
             print(f"⚠️ Failed to complete QR task {task_id}: {e}")
     
     def change_screen(self, screen_name):
+        if screen_name == "qr_scan_screen":
+            self.ensure_english_keyboard_layout()
         self.root.current = screen_name
         self.current_screen_name = screen_name
         print(f"Changing screen to: {screen_name}")
