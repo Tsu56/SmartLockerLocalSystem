@@ -148,4 +148,4 @@ def test_smart_locker_change(img_before_path, img_after_path):
 
 if __name__ == "__main__":
     # รันโค้ดด้วยรูปของคุณ
-    test_smart_locker_change("green_before.jpeg", "green_after_1.jpeg")
+    test_smart_locker_change("before.jpeg", "after.jpeg")

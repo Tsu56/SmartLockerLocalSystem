@@ -2,7 +2,7 @@ import serial
 import time
 import threading
 
-PORT = "/dev/ttyUSB0"  # เปลี่ยนตามเครื่องของคุณ
+PORT = "COM3"  # เปลี่ยนตามเครื่องของคุณ
 BAUDRATE = 38400
 device_addresses = ['S1', 'S2']
 
