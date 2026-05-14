@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import requests
 import os
 import time
+import json
 from dotenv import load_dotenv
 
 # นำเข้า models และ schema ที่เราสร้างไว้
@@ -17,6 +18,7 @@ load_dotenv()
 INTERNAL_SHARED_SECRET = get_internal_shared_secret()
 DEVICE_SERVICE_URL = "http://device-identity-service:8000"
 CLOUD_SERVER_URL = os.getenv("SERVER_URL", "")
+QR_TASK_COMPLETE_CALLBACK_PATH = os.getenv("QR_TASK_COMPLETE_CALLBACK_PATH", "/qrTask/complete-from-locker")
 
 router = APIRouter(prefix="/locker", tags=["Locker Operations"])
 
@@ -39,6 +41,66 @@ def get_cloud_auth_headers():
     except Exception as e:
         print(f"📡 [Transaction Sync] Device Service Connection Error: {e}")
         return None
+
+
+def get_local_locker_id() -> str | None:
+    """ดึง locker_id ปัจจุบันของตู้จาก identity service"""
+    auth_headers = get_cloud_auth_headers() or {}
+    locker_id = auth_headers.get("locker_id")
+    if locker_id is None:
+        return None
+    return str(locker_id)
+
+
+def _to_utc_aware(dt_value: datetime | None) -> datetime | None:
+    """Normalize datetime ให้เป็น UTC-aware เพื่อป้องกัน compare error naive/aware"""
+    if dt_value is None:
+        return None
+    if dt_value.tzinfo is None:
+        return dt_value.replace(tzinfo=timezone.utc)
+    return dt_value.astimezone(timezone.utc)
+
+
+def sync_qr_task_completion_to_server(task_payload: dict, max_retries: int = 3):
+    """แจ้ง Web Server ว่า QR task ถูกทำเสร็จแล้วจากฝั่งตู้"""
+    if not CLOUD_SERVER_URL:
+        print("⚠️ [QR Task Sync] SERVER_URL is empty, skip completion callback")
+        return {"status": "skipped", "message": "SERVER_URL is empty"}
+
+    callback_url = f"{CLOUD_SERVER_URL.rstrip('/')}{QR_TASK_COMPLETE_CALLBACK_PATH}"
+    auth_headers = get_cloud_auth_headers() or {}
+
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(
+                callback_url,
+                json=task_payload,
+                headers=auth_headers,
+                timeout=15,
+            )
+            if response.status_code in (200, 201):
+                print(f"✅ [QR Task Sync] Completion callback success task_id={task_payload.get('task_id')}")
+                return {"status": "success", "status_code": response.status_code}
+
+            print(
+                f"⚠️ [QR Task Sync] Callback failed status={response.status_code} body={response.text}"
+            )
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+                continue
+            return {
+                "status": "error",
+                "status_code": response.status_code,
+                "detail": response.text,
+            }
+        except requests.RequestException as e:
+            print(f"⚠️ [QR Task Sync] Network error (attempt {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+                continue
+            return {"status": "error", "message": str(e)}
+
+    return {"status": "error", "message": "Max retries exceeded"}
 
 
 def sync_transaction_to_server(transaction_id: int, max_retries: int = 3):
@@ -117,9 +179,11 @@ def sync_transaction_to_server(transaction_id: int, max_retries: int = 3):
                         for stock in slot_stocks
                     ],
                 }
+
+                print(f"DEBUG {transaction_payload}")
                 
                 # 5. ส่งไปยัง Cloud Server
-                sync_url = f"{CLOUD_SERVER_URL}/transaction/sync/device-transaction"
+                sync_url = f"{CLOUD_SERVER_URL}/transaction/createTransactionFromLocker"
                 response = requests.post(
                     sync_url,
                     json=transaction_payload,
@@ -129,6 +193,7 @@ def sync_transaction_to_server(transaction_id: int, max_retries: int = 3):
                 
                 if response.status_code == 200 or response.status_code == 201:
                     sync_result = response.json()
+                    print(f"DEBUG Sync Result: {sync_result}")
                     
                     # 6. อัปเดต synced_at และ server_transaction_id
                     transaction.synced_at = datetime.now(timezone.utc)
@@ -197,6 +262,9 @@ def get_slots_with_stock(session: Session = Depends(get_session)):
             status_code=500,
             detail=f"Error connecting to device service: {str(e)}"
         )
+
+    # แสดงเฉพาะ slot ที่ยังไม่ถูกลบ (soft delete)
+    slots = [slot for slot in slots if slot.get("deleted_at") is None]
     
     result = []
     for slot in slots:
@@ -217,6 +285,7 @@ def get_slots_with_stock(session: Session = Depends(get_session)):
             
         result.append({
             "slot_id": slot["id"],
+            "slot_id_from_server": slot["slot_id"],
             "slot_status": slot["slot_status"],
             "capacity": slot["capacity"],
             "stocks": stocks_data
@@ -229,6 +298,96 @@ def get_all_products(session: Session = Depends(get_session)):
     """ดึงข้อมูลสินค้าทั้งหมด (Master Data)"""
     products = session.exec(select(models.Product).order_by(models.Product.product_id)).all()
     return products
+
+
+@router.post("/qr-tasks/resolve", response_model=schema.QRTaskResolvePublic)
+def resolve_qr_task(payload: schema.QRTaskResolveRequest, session: Session = Depends(get_session)):
+    """ตรวจ QR token กับฐานข้อมูลในตู้และยืนยันผู้รับมอบหมาย"""
+    qr_token = payload.qr_token.strip()
+    user_id = payload.user_id.strip()
+    if not qr_token or not user_id:
+        raise HTTPException(status_code=400, detail="qr_token and user_id are required")
+
+    db_task = session.exec(
+        select(models.QRTask).where(models.QRTask.qr_token == qr_token)
+    ).first()
+
+    if not db_task or db_task.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="QR task not found")
+
+    local_locker_id = get_local_locker_id()
+    if local_locker_id and str(db_task.locker_id) != local_locker_id:
+        raise HTTPException(status_code=403, detail="QR task does not belong to this locker")
+
+    now = datetime.now(timezone.utc)
+    expires_at = _to_utc_aware(db_task.expires_at)
+    if expires_at and expires_at < now:
+        db_task.status = "expired"
+        db_task.updated_at = now
+        session.add(db_task)
+        session.commit()
+        raise HTTPException(status_code=410, detail="QR task expired")
+
+    if db_task.status != "pending":
+        raise HTTPException(status_code=409, detail=f"QR task status is {db_task.status}")
+
+    if db_task.assigned_user_id != user_id:
+        raise HTTPException(status_code=403, detail="This user is not assigned to this task")
+
+    try:
+        items = json.loads(db_task.items_json) if db_task.items_json else []
+        if not isinstance(items, list):
+            items = []
+    except Exception:
+        items = []
+
+    return {
+        "task_id": db_task.task_id,
+        "task_type": db_task.task_type,
+        "assigned_user_id": db_task.assigned_user_id,
+        "status": db_task.status,
+        "expires_at": db_task.expires_at,
+        "items": items,
+    }
+
+
+@router.post("/qr-tasks/{task_id}/complete")
+def complete_qr_task(
+    task_id: str,
+    payload: schema.QRTaskCompleteRequest,
+    background_tasks: BackgroundTasks,
+    session: Session = Depends(get_session),
+):
+    """ปิดงาน QR task หลังผู้ใช้กดยืนยันทำรายการที่ตู้สำเร็จ"""
+    db_task = session.get(models.QRTask, task_id)
+    if not db_task:
+        raise HTTPException(status_code=404, detail="QR task not found")
+
+    if db_task.assigned_user_id != payload.user_id:
+        raise HTTPException(status_code=403, detail="This user is not assigned to this task")
+
+    if db_task.status != "pending":
+        raise HTTPException(status_code=409, detail=f"QR task status is {db_task.status}")
+
+    now = datetime.now(timezone.utc)
+    db_task.status = "completed"
+    db_task.used_at = now
+    db_task.updated_at = now
+    session.add(db_task)
+    session.commit()
+
+    callback_payload = {
+        "task_id": db_task.task_id,
+        "locker_id": db_task.locker_id,
+        "assigned_user_id": db_task.assigned_user_id,
+        "status": db_task.status,
+        "used_at": db_task.used_at.isoformat() if db_task.used_at else None,
+        "updated_at": db_task.updated_at.isoformat() if db_task.updated_at else None,
+        "completed_by": payload.user_id,
+    }
+    background_tasks.add_task(sync_qr_task_completion_to_server, callback_payload)
+
+    return {"status": "success", "task_id": task_id, "completed_at": now}
 
 # ==========================================
 # 2. Endpoints สำหรับการทำรายการ (Transactions)

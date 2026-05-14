@@ -6,18 +6,65 @@
     name: "qr_scan_screen"
     md_bg_color: LIGHT_BG
 
-    MDRectangleFlatButton:
-        text: "NEXT"
-        pos_hint: {'center_x': 0.5, 'center_y': 0.2}
-        line_color: get_color_from_hex("#11cd3d")
-        theme_text_color: "Custom"
-        text_color: get_color_from_hex("#11cd3d")
-        on_release: app.change_screen("dispense_screen")
-        
-    MDRectangleFlatButton:
-        text: "CANCEL"
-        pos_hint: {'center_x': 0.5, 'center_y': 0.1}
-        line_color: RED_COLOR
-        theme_text_color: "Custom"
-        text_color: RED_COLOR
-        on_release: app.go_back()
+    on_pre_enter: qr_token_input.focus = True
+    on_leave:
+        qr_token_input.focus = False
+        qr_token_input.text = ""
+
+    MDBoxLayout:
+        orientation: "vertical"
+        padding: "24dp"
+        spacing: "18dp"
+
+        MDLabel:
+            text: "ทำรายการผ่าน QR Code"
+            halign: "center"
+            font_style: "H5"
+
+        MDLabel:
+            text: "หลังยืนยันตัวตนแล้ว กรุณาสแกนหรือวาง QR token เพื่อดึงรายการที่ได้รับมอบหมาย"
+            halign: "center"
+            theme_text_color: "Secondary"
+
+        Widget:
+
+        MDCard:
+            size_hint: None, None
+            size: "700dp", "170dp"
+            pos_hint: {"center_x": 0.5}
+            padding: "20dp"
+            md_bg_color: 1, 1, 1, 1
+
+            MDBoxLayout:
+                orientation: "vertical"
+                spacing: "12dp"
+
+                MDTextField:
+                    id: qr_token_input
+                    hint_text: "QR token / task code"
+                    helper_text: "สแกนแล้วระบบจะตรวจสอบอัตโนมัติ (รองรับเครื่องสแกนที่ส่ง Enter)"
+                    helper_text_mode: "persistent"
+                    multiline: False
+                    on_text_validate: app.handle_qr_submit(self.text)
+
+                MDRectangleFlatButton:
+                    text: "ตรวจสอบ QR"
+                    line_color: get_color_from_hex("#11cd3d")
+                    theme_text_color: "Custom"
+                    text_color: get_color_from_hex("#11cd3d")
+                    pos_hint: {"center_x": 0.5}
+                    on_release: app.handle_qr_submit(qr_token_input.text)
+
+        Widget:
+
+        MDBoxLayout:
+            adaptive_height: True
+            spacing: "12dp"
+            pos_hint: {"center_x": 0.5}
+
+            MDRectangleFlatButton:
+                text: "CANCEL"
+                line_color: RED_COLOR
+                theme_text_color: "Custom"
+                text_color: RED_COLOR
+                on_release: app.change_screen("home_screen")

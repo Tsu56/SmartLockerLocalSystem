@@ -48,3 +48,22 @@ def get_secret_key():
     """
     secrets = get_all_secrets()
     return secrets.get("SECRET_KEY")
+
+
+def get_mqtt_config() -> dict:
+    """ดึงค่าคอนฟิก MQTT จาก mqtt_config.json"""
+    base_path = "/local_auth_service/secret"
+    file_path = os.path.join(base_path, "mqtt_config.json")
+
+    if not os.path.exists(file_path):
+        return {}
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if isinstance(data, dict):
+                return data
+    except Exception as e:
+        print(f"⚠️ Error reading mqtt_config.json: {e}")
+
+    return {}

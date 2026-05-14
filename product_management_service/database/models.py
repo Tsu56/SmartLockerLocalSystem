@@ -121,3 +121,30 @@ class Snapshot(SnapshotBase, table=True):
 
     transaction: Optional[Transaction] = Relationship(back_populates="snapshots")
     transaction_detail: Optional[TransactionDetail] = Relationship(back_populates="snapshots")
+
+
+class ProcessedEvent(SQLModel, table=True):
+    """บันทึก event_id ที่ประมวลผลแล้วเพื่อกันข้อความซ้ำ"""
+    __tablename__ = "processed_event"
+
+    event_id: str = Field(primary_key=True, max_length=128, description="ID ของ event")
+    event_type: str = Field(max_length=64, description="ชนิด event")
+    processed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class QRTask(SQLModel, table=True):
+    """งานที่ Cloud ส่งเข้าตู้ผ่าน MQTT เพื่อรอสแกน QR ที่ตู้"""
+    __tablename__ = "qr_task"
+
+    task_id: str = Field(primary_key=True, max_length=128, description="รหัสงานจาก Cloud")
+    locker_id: str = Field(index=True, max_length=45)
+    task_type: str = Field(max_length=32, description="restock หรือ dispense")
+    assigned_user_id: str = Field(index=True, max_length=128)
+    qr_token: Optional[str] = Field(default=None, index=True, max_length=255)
+    items_json: str = Field(default="[]", description="รายการยาในรูป JSON string")
+    status: str = Field(default="pending", index=True, max_length=32)
+    expires_at: Optional[datetime] = Field(default=None, index=True)
+    used_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = None
+    deleted_at: Optional[datetime] = None

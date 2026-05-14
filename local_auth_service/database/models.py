@@ -1,5 +1,5 @@
 from database import UserBase, UserPermissionBase, AuthLogBase
-from sqlmodel import Field, Relationship
+from sqlmodel import SQLModel, Field, Relationship
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -32,3 +32,12 @@ class AuthLog(AuthLogBase, table=True):
     
     # Relationships
     user: Optional[User] = Relationship(back_populates="auth_logs")
+
+
+class ProcessedEvent(SQLModel, table=True):
+    """บันทึก event_id ที่ประมวลผลแล้วเพื่อกันข้อความซ้ำ"""
+    __tablename__ = "processed_event"
+
+    event_id: str = Field(primary_key=True, max_length=128, description="ID ของ event")
+    event_type: str = Field(max_length=64, description="ชนิด event")
+    processed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

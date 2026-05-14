@@ -1,5 +1,5 @@
 from database import DeviceInfoBase, SlotBase
-from sqlmodel import Field, Relationship
+from sqlmodel import SQLModel, Field, Relationship
 from datetime import datetime, timezone
 from typing import Optional, List
 
@@ -34,3 +34,12 @@ class DeviceInfo(DeviceInfoBase, table=True):
     
     # Relationship กับ Slot (one-to-many)
     slots: List["Slot"] = Relationship(back_populates="device")
+
+
+class ProcessedEvent(SQLModel, table=True):
+    """บันทึก event_id ที่ประมวลผลแล้วเพื่อกันข้อความซ้ำ"""
+    __tablename__ = "processed_event"
+
+    event_id: str = Field(primary_key=True, max_length=128, description="ID ของ event")
+    event_type: str = Field(max_length=64, description="ชนิด event")
+    processed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

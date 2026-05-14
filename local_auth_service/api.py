@@ -1,5 +1,5 @@
 from dotenv import load_dotenv
-import httpx, os, threading, time, requests, hashlib
+import httpx, os, threading, time, requests, hashlib, json
 from fastapi import APIRouter, BackgroundTasks, HTTPException, status, Header
 from sqlmodel import select, delete, func, or_, update
 from typing import List
@@ -11,14 +11,19 @@ load_dotenv()
 
 # นำเข้าส่วนประกอบจากโมดูล local_auth ที่เราสร้างไว้
 from database import SessionDep, engine, Session
-from database.models import User, UserPermission, AuthLog
+from database.models import User, UserPermission, AuthLog, ProcessedEvent
 from database.schema import (
     UserCreate, UserPublic, UserLogin,
     SmartCardLogin, RFIDTagLogin, QRCodeLogin,
     AuthLogCreate, AuthLogPublic
 )
 from encryption import encrypt_data, decrypt_data
-from getkey import get_internal_shared_secret, get_search_hash_salt
+from getkey import get_internal_shared_secret, get_search_hash_salt, get_mqtt_config
+
+try:
+    import paho.mqtt.client as mqtt
+except Exception:
+    mqtt = None
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__truncate_error=True)
 
@@ -32,6 +37,9 @@ INTERNAL_SECRET = get_internal_shared_secret()
 
 # Salt ลับสำหรับการทำ Blind Index (ควรดึงจาก .env เพื่อความปลอดภัย)
 SEARCH_HASH_SALT = get_search_hash_salt()
+MQTT_ENABLED = os.getenv("MQTT_ENABLED", "false").strip().lower() == "true"
+MQTT_BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "8883"))
+MQTT_KEEPALIVE = int(os.getenv("MQTT_KEEPALIVE_SECONDS", "60"))
 
 def get_search_hash(data: str) -> str:
     """สร้างค่า Hash สำหรับใช้ค้นหา (Blind Index)"""
@@ -85,10 +93,10 @@ def user_sync_agent():
                     )).first()
                     
                     # รวม Timestamps ทั้งหมดเพื่อหาจุดที่ใหม่ที่สุดจริง ๆ
-                    all_ts = [ts for ts in list(u_max or []) + list(p_max or []) if ts is not None]
+                    all_ts = [_parse_utc(ts) for ts in list(u_max or []) + list(p_max or []) if ts is not None]
                     
                     if all_ts:
-                        last_sync_time = max(all_ts).replace(tzinfo=timezone.utc).isoformat()
+                        last_sync_time = max(all_ts).astimezone(timezone.utc).isoformat()
 
                     # 3. ยิงไปที่ Server
                     sync_url = f"{CLOUD_SERVER_URL}/userLockerGrant/sync/users"
@@ -135,7 +143,7 @@ def process_user_sync(session, u_data):
     user.last_name = user_info.get("last_name")
     user.hashed_password = user_info.get("password")
     # เข้ารหัส citizen_id_encrypted ก่อนบันทึกลงฐานข้อมูล
-    raw_citizen_id = user_info.get("citizen_id") or user_info.get("citizen_id_encrypted")
+    raw_citizen_id = user_info.get("citizen_id")
     if raw_citizen_id:
         # เข้ารหัสสำหรับเก็บ (AES-Fernet)
         user.citizen_id_encrypted = encrypt_data(str(raw_citizen_id))
@@ -199,9 +207,9 @@ def run_user_sync_logic():
                 u_max = session.exec(select(func.max(User.created_at), func.max(User.updated_at), func.max(User.deleted_at))).first()
                 p_max = session.exec(select(func.max(UserPermission.created_at), func.max(UserPermission.updated_at), func.max(UserPermission.deleted_at))).first()
                 
-                all_ts = [ts for ts in list(u_max or []) + list(p_max or []) if ts is not None]
+                all_ts = [_parse_utc(ts) for ts in list(u_max or []) + list(p_max or []) if ts is not None]
                 if all_ts:
-                    last_sync_time = max(all_ts).replace(tzinfo=timezone.utc).isoformat()
+                    last_sync_time = max(all_ts).astimezone(timezone.utc).isoformat()
 
                 sync_url = f"{CLOUD_SERVER_URL}/userLockerGrant/sync/users"
                 params = {"last_sync": last_sync_time}
@@ -233,6 +241,155 @@ def run_user_sync_logic():
     except Exception as e:
         print(f"📡 User Sync Error: {e}")
     return 0
+
+
+def _extract_event_payload(raw_event: dict):
+    if not isinstance(raw_event, dict):
+        return None
+
+    payload = raw_event.get("payload")
+    if isinstance(payload, dict):
+        return payload
+
+    return raw_event
+
+
+def _parse_utc(value):
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+    if isinstance(value, str):
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    return None
+
+
+def _get_locker_id_from_identity():
+    try:
+        auth_res = requests.get(
+            IDENTITY_SERVICE_URL,
+            headers={"X-Internal-Secret": INTERNAL_SECRET},
+            timeout=5,
+        )
+        if auth_res.status_code == 200:
+            locker_id = auth_res.json().get("locker_id")
+            return str(locker_id) if locker_id is not None else None
+    except Exception:
+        pass
+    return None
+
+
+def _get_mqtt_runtime_config():
+    config = get_mqtt_config()
+    host = config.get("MQTT_BROKER_HOST")
+    username = config.get("MQTT_USERNAME")
+    password = config.get("MQTT_PASSWORD")
+
+    if not host or not username or not password:
+        return None
+
+    locker_id = _get_locker_id_from_identity()
+    if not locker_id:
+        return None
+
+    return {
+        "host": host,
+        "username": username,
+        "password": password,
+        "topic": f"smartlocker/{locker_id}/cloud/locker/user-grant/upsert",
+        "client_id": f"{locker_id}-local-auth",
+    }
+
+
+def _process_user_event_message(message_payload: dict):
+    event_id = message_payload.get("event_id") if isinstance(message_payload, dict) else None
+    user_payload = _extract_event_payload(message_payload)
+    if not user_payload or not isinstance(user_payload, dict):
+        return
+
+    with Session(engine) as session:
+        if event_id and session.get(ProcessedEvent, event_id):
+            print(f"ℹ️ [User MQTT] Duplicate event_id={event_id}, skipping")
+            return
+
+        user_info = user_payload.get("User", {})
+        user_id = user_info.get("user_id")
+        if not user_id:
+            return
+
+        db_user = session.exec(select(User).where(User.user_id == user_id)).first()
+        if db_user and db_user.updated_at:
+            incoming_updated_at = _parse_utc(user_payload.get("updated_at"))
+            current_updated_at = _parse_utc(db_user.updated_at)
+            if incoming_updated_at and current_updated_at and incoming_updated_at < current_updated_at:
+                return
+
+        process_user_sync(session, user_payload)
+        if event_id:
+            session.add(ProcessedEvent(event_id=event_id, event_type="user-grant.upsert"))
+        session.commit()
+
+    print(f"✅ [User MQTT] Applied user_id={user_payload.get('User', {}).get('user_id')}")
+
+
+def user_sync_mqtt_agent():
+    """รับ event user-grant จาก HiveMQ Cloud"""
+    if mqtt is None:
+        print("⚠️ [User MQTT] paho-mqtt is not installed; fallback to polling")
+        user_sync_agent()
+        return
+
+    print("🚀 User MQTT Agent Started...")
+    time.sleep(10)
+
+    while True:
+        cfg = _get_mqtt_runtime_config()
+        if not cfg:
+            print("⚠️ [User MQTT] Waiting for locker activation or mqtt_config.json")
+            time.sleep(20)
+            continue
+
+        client = mqtt.Client(client_id=cfg["client_id"], clean_session=False)
+        client.username_pw_set(cfg["username"], cfg["password"])
+        client.tls_set()
+
+        def on_connect(client_obj, _userdata, _flags, rc):
+            if rc == 0:
+                client_obj.subscribe(cfg["topic"], qos=1)
+                print(f"✅ [User MQTT] Connected and subscribed: {cfg['topic']}")
+            else:
+                print(f"❌ [User MQTT] Connect failed rc={rc}")
+
+        def on_message(_client_obj, _userdata, msg):
+            try:
+                payload = json.loads(msg.payload.decode("utf-8"))
+                _process_user_event_message(payload)
+            except Exception as e:
+                print(f"❌ [User MQTT] Message processing error: {e}")
+
+        client.on_connect = on_connect
+        client.on_message = on_message
+
+        try:
+            client.connect(cfg["host"], MQTT_BROKER_PORT, MQTT_KEEPALIVE)
+            client.loop_forever()
+        except Exception as e:
+            print(f"📡 [User MQTT] Broker connection error: {e}")
+            time.sleep(10)
+
+
+def start_local_auth_sync_worker():
+    """เริ่ม worker ตามโหมด MQTT/Polling"""
+    target = user_sync_mqtt_agent if MQTT_ENABLED else user_sync_agent
+    sync_thread = threading.Thread(target=target, daemon=True)
+    sync_thread.start()
+    mode = "MQTT" if MQTT_ENABLED else "Polling"
+    print(f"✅ Local Auth sync worker thread started ({mode})")
 
 @router.post("/sync/trigger")
 async def trigger_sync(background_tasks: BackgroundTasks):
@@ -306,7 +463,9 @@ def login_with_password(login_data: UserLogin, session: SessionDep):
 def login_with_smartcard(login_in: SmartCardLogin, session: SessionDep):
     """เข้าสู่ระบบด้วยการเสียบบัตรประชาชน (ใช้ Blind Index ค้นหา)"""
     raw_citizen_id = login_in.citizen_id.strip()
+    print(raw_citizen_id)
     search_hash = get_search_hash(raw_citizen_id)
+    print(search_hash)
 
     # ค้นหาโดยตรงผ่าน Hash Index ไม่ต้องดึงทุกคนมาวนลูปถอดรหัส
     statement = select(User).where(
@@ -387,6 +546,3 @@ async def get_user_permissions(
         },
         "status": "active"
     }
-
-sync_thread = threading.Thread(target=user_sync_agent, daemon=True)
-sync_thread.start()

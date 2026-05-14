@@ -27,46 +27,61 @@
                 theme_text_color: "Primary"
 
         # ส่วนปุ่มกดหลัก (Main Action Buttons)
-        MDBoxLayout:
-            orientation: 'horizontal'
-            spacing: "24dp"
-            padding: "10dp"
-            size_hint_y: 0.2  # ปรับความสูงเป็น 20% ของพื้นที่แม่
-            size_hint_x: 0.8  # ปรับความกว้างเป็น 80% (ถ้าต้องการ)
-            pos_hint: {"center_x": .5}
-            
+        AnchorLayout:
+            anchor_x: "center"
+            anchor_y: "center"
+            size_hint_y: 1
 
             MDBoxLayout:
                 orientation: 'horizontal'
-                padding: "10dp"
+                size_hint: None, None
+                width: self.minimum_width
+                height: "220dp"
                 spacing: "10dp"
-                pos_hint: {"center_y": .5}
-                size_hint_y: 0.7  # ปรับความสูงเป็น 20% ของพื้นที่แม่
-                size_hint_x: 0.3  # ปรับความกว้างเป็น 80% (ถ้าต้องการ)
-                
-                
+                padding: ["10dp", 0, "10dp", 0]
 
-                # --- ปุ่ม เปล่า
+                # --- ปุ่ม QR Task ---
                 MDCard:
-                    disabled: True
-                    id: btn_blank1
+                    id: btn_qr_task
                     padding: "4dp"
                     size_hint: None, None
                     size: "320dp", "200dp"
-                    size_hint_x: 0.20
-                    size_hint_y: 1
-                    md_bg_color: LIGHT_BG
-                    on_release: app.go_to_restock()
+                    md_bg_color: get_color_from_hex("#FFFFFF")
+                    line_color: 0, 0, 0, 1
+                    line_width: dp(0.5)
+                    disabled: True
+                    on_release: app.go_to_qr_task_scan()
 
-            
-            # --- ปุ่ม Restock (เติมของ) ---
+                    MDBoxLayout:
+                        orientation: "vertical"
+                        spacing: "15dp"
+                        padding: "20dp"
+                        adaptive_height: True
+                        pos_hint: {"center_x": .5, "center_y": .5}
+                        spacing: "40dp"
+
+                        MDIcon:
+                            icon: "qrcode-scan"
+                            font_size: "64sp"
+                            pos_hint: {"center_x": .5}
+                            theme_text_color: "Custom"
+                            text_color: get_color_from_hex("#D35400")
+
+                        MDLabel:
+                            text: "QR TASK"
+                            font_style: "H5"
+                            halign: "center"
+                            adaptive_height: True
+                            bold: True
+                            theme_text_color: "Custom"
+                            text_color: get_color_from_hex("#D35400")
+
+                # --- ปุ่ม Restock (เติมของ) ---
                 MDCard:
                     id: btn_restock
                     padding: "4dp"
                     size_hint: None, None
                     size: "320dp", "200dp"
-                    size_hint_x: 0.30
-                    size_hint_y: 1
                     md_bg_color: get_color_from_hex("#FFFFFF")
                     line_color: 0, 0, 0, 1        # สีขอบ (น้ำเงิน)
                     line_width: dp(0.5)
@@ -96,8 +111,6 @@
                             bold: True
                             theme_text_color: "Custom"
                             text_color: RESTOCK_COLOR
-                
-
 
                 # --- ปุ่ม Dispense (เบิกของ) ---
                 MDCard:
@@ -105,8 +118,6 @@
                     padding: "4dp"
                     size_hint: None, None
                     size: "320dp", "200dp"
-                    size_hint_x: 0.30
-                    size_hint_y: 1
                     md_bg_color: get_color_from_hex("#FFFFFF")
                     line_color: 0, 0, 0, 1        # สีขอบ (น้ำเงิน)
                     line_width: dp(0.5)
@@ -136,20 +147,7 @@
                             bold: True
                             theme_text_color: "Custom"
                             text_color: DISPENSE_COLOR
-                
-                # --- ปุ่มเปล่า
-                MDCard:
-                    disabled: True
-                    id: btn_blank2
-                    padding: "4dp"
-                    size_hint: None, None
-                    size: "320dp", "200dp"
-                    size_hint_x: 0.2
-                    size_hint_y: 1
-                    md_bg_color: LIGHT_BG
-                    
 
-                
 
         # ส่วนปุ่ม Logout (ล่างสุด)
         MDBoxLayout:
