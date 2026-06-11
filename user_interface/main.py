@@ -1,5 +1,11 @@
 import os
 import subprocess
+
+from kivy.config import Config
+Config.set('graphics', 'fullscreen', 'auto')
+Config.set('graphics', 'borderless', '1')
+Config.set('kivy', 'keyboard_mode', 'dock')
+
 from kivymd.app import MDApp
 from kivy.lang import Builder
 from kivymd.toast import toast
@@ -17,9 +23,6 @@ from controller.restock_controller import RestockScreen, MDScreen, MDDataTable, 
 from controller.dispense_controller import DispenseScreen
 from controller.admin_rfid_controller import AdminRfidScreen
 from controller.rfid_login_controller import RFIDLoginScreen
-
-Window.size = (1024, 600)
-
 
 def setup_default_thai_font():
     font_candidates = [

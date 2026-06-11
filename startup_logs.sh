@@ -14,4 +14,6 @@ xfce4-terminal \
     --tab --title="Display" --command="bash -c 'docker compose logs -f display-service; exec bash'" \
     --tab --title="Product Mgmt" --command="bash -c 'docker compose logs -f product-management-service; exec bash'" \
     --tab --title="Hardware Log" --command="bash -c 'journalctl -u locker-hardware.service -f; exec bash'" \
+    --tab --title="Camera Service" --command="bash -c 'cd /home/tphu/Desktop/SmartLocker && python3 camera_service.py; exec bash'" \
+    --tab --title="Camera Sync Agent" --command="bash -c 'cd /home/tphu/Desktop/SmartLocker && python3 camera_sync_agent.py; exec bash'" \
     --tab --title="SmartLocker UI" --command="bash -c 'cd /home/tphu/Desktop/SmartLocker/user_interface && source user_interface_venv/bin/activate && python main.py; exec bash'"
