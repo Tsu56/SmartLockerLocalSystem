@@ -27,127 +27,137 @@
                 theme_text_color: "Primary"
 
         # ส่วนปุ่มกดหลัก (Main Action Buttons)
-        AnchorLayout:
-            anchor_x: "center"
-            anchor_y: "center"
+        RelativeLayout:
             size_hint_y: 1
 
-            MDBoxLayout:
-                orientation: 'horizontal'
-                size_hint: None, None
-                width: self.minimum_width
-                height: "220dp"
-                spacing: "10dp"
-                padding: ["10dp", 0, "10dp", 0]
+            AnchorLayout:
+                anchor_x: "center"
+                anchor_y: "center"
 
-                # --- ปุ่ม QR Task ---
-                MDCard:
-                    id: btn_qr_task
-                    padding: "4dp"
+                MDBoxLayout:
+                    orientation: 'horizontal'
                     size_hint: None, None
-                    size: "320dp", "200dp"
-                    md_bg_color: get_color_from_hex("#FFFFFF")
-                    line_color: 0, 0, 0, 1
-                    line_width: dp(0.5)
-                    disabled: True
-                    on_release: app.go_to_qr_task_scan()
+                    width: self.minimum_width
+                    height: "220dp"
+                    spacing: "10dp"
+                    padding: ["10dp", 0, "10dp", 0]
 
-                    MDBoxLayout:
-                        orientation: "vertical"
-                        spacing: "15dp"
-                        padding: "20dp"
-                        adaptive_height: True
-                        pos_hint: {"center_x": .5, "center_y": .5}
-                        spacing: "40dp"
+                    # --- ปุ่ม QR Task ---
+                    MDCard:
+                        id: btn_qr_task
+                        padding: "4dp"
+                        size_hint: None, None
+                        size: "320dp", "200dp"
+                        md_bg_color: get_color_from_hex("#FFFFFF")
+                        line_color: 0, 0, 0, 1
+                        line_width: dp(0.5)
+                        disabled: True
+                        on_release: app.go_to_qr_task_scan()
 
-                        MDIcon:
-                            icon: "qrcode-scan"
-                            font_size: "64sp"
-                            pos_hint: {"center_x": .5}
-                            theme_text_color: "Custom"
-                            text_color: get_color_from_hex("#D35400")
-
-                        MDLabel:
-                            text: "QR TASK"
-                            font_style: "H5"
-                            halign: "center"
+                        MDBoxLayout:
+                            orientation: "vertical"
+                            spacing: "15dp"
+                            padding: "20dp"
                             adaptive_height: True
-                            bold: True
-                            theme_text_color: "Custom"
-                            text_color: get_color_from_hex("#D35400")
+                            pos_hint: {"center_x": .5, "center_y": .5}
+                            spacing: "40dp"
 
-                # --- ปุ่ม Restock (เติมของ) ---
-                MDCard:
-                    id: btn_restock
-                    padding: "4dp"
-                    size_hint: None, None
-                    size: "320dp", "200dp"
-                    md_bg_color: get_color_from_hex("#FFFFFF")
-                    line_color: 0, 0, 0, 1        # สีขอบ (น้ำเงิน)
-                    line_width: dp(0.5)
-                    disabled: True
-                    on_release: app.go_to_restock()
+                            MDIcon:
+                                icon: "qrcode-scan"
+                                font_size: "64sp"
+                                pos_hint: {"center_x": .5}
+                                theme_text_color: "Custom"
+                                text_color: get_color_from_hex("#D35400")
 
-                    MDBoxLayout:
-                        orientation: "vertical"
-                        spacing: "15dp"
-                        padding: "20dp"
-                        adaptive_height: True
-                        pos_hint: {"center_x": .5, "center_y": .5}
-                        spacing: "40dp"
+                            MDLabel:
+                                text: "QR TASK"
+                                font_style: "H5"
+                                halign: "center"
+                                adaptive_height: True
+                                bold: True
+                                theme_text_color: "Custom"
+                                text_color: get_color_from_hex("#D35400")
 
-                        MDIcon:
-                            icon: "package-variant-plus"
-                            font_size: "64sp"
-                            pos_hint: {"center_x": .5}
-                            theme_text_color: "Custom"
-                            text_color: RESTOCK_COLOR
-                        
-                        MDLabel:
-                            text: "RESTOCK"
-                            font_style: "H5"
-                            halign: "center"
+                    # --- ปุ่ม Restock (เติมของ) ---
+                    MDCard:
+                        id: btn_restock
+                        padding: "4dp"
+                        size_hint: None, None
+                        size: "320dp", "200dp"
+                        md_bg_color: get_color_from_hex("#FFFFFF")
+                        line_color: 0, 0, 0, 1        # สีขอบ (น้ำเงิน)
+                        line_width: dp(0.5)
+                        disabled: True
+                        on_release: app.go_to_restock()
+
+                        MDBoxLayout:
+                            orientation: "vertical"
+                            spacing: "15dp"
+                            padding: "20dp"
                             adaptive_height: True
-                            bold: True
-                            theme_text_color: "Custom"
-                            text_color: RESTOCK_COLOR
+                            pos_hint: {"center_x": .5, "center_y": .5}
+                            spacing: "40dp"
 
-                # --- ปุ่ม Dispense (เบิกของ) ---
-                MDCard:
-                    id: btn_dispense
-                    padding: "4dp"
-                    size_hint: None, None
-                    size: "320dp", "200dp"
-                    md_bg_color: get_color_from_hex("#FFFFFF")
-                    line_color: 0, 0, 0, 1        # สีขอบ (น้ำเงิน)
-                    line_width: dp(0.5)
-                    disabled: True
-                    on_release: app.go_to_dispense()
+                            MDIcon:
+                                icon: "package-variant-plus"
+                                font_size: "64sp"
+                                pos_hint: {"center_x": .5}
+                                theme_text_color: "Custom"
+                                text_color: RESTOCK_COLOR
+                            
+                            MDLabel:
+                                text: "RESTOCK"
+                                font_style: "H5"
+                                halign: "center"
+                                adaptive_height: True
+                                bold: True
+                                theme_text_color: "Custom"
+                                text_color: RESTOCK_COLOR
 
-                    MDBoxLayout:
-                        orientation: "vertical"
-                        spacing: "15dp"
-                        padding: "20dp"
-                        adaptive_height: True
-                        pos_hint: {"center_x": .5, "center_y": .5}
-                        spacing: "40dp"
+                    # --- ปุ่ม Dispense (เบิกของ) ---
+                    MDCard:
+                        id: btn_dispense
+                        padding: "4dp"
+                        size_hint: None, None
+                        size: "320dp", "200dp"
+                        md_bg_color: get_color_from_hex("#FFFFFF")
+                        line_color: 0, 0, 0, 1        # สีขอบ (น้ำเงิน)
+                        line_width: dp(0.5)
+                        disabled: True
+                        on_release: app.go_to_dispense()
 
-                        MDIcon:
-                            icon: "package-variant-minus"
-                            font_size: "64sp"
-                            pos_hint: {"center_x": .5}
-                            theme_text_color: "Custom"
-                            text_color: DISPENSE_COLOR
-                        
-                        MDLabel:
-                            text: "DISPENSE"
-                            font_style: "H5"
-                            halign: "center"
+                        MDBoxLayout:
+                            orientation: "vertical"
+                            spacing: "15dp"
+                            padding: "20dp"
                             adaptive_height: True
-                            bold: True
-                            theme_text_color: "Custom"
-                            text_color: DISPENSE_COLOR
+                            pos_hint: {"center_x": .5, "center_y": .5}
+                            spacing: "40dp"
 
+                            MDIcon:
+                                icon: "package-variant-minus"
+                                font_size: "64sp"
+                                pos_hint: {"center_x": .5}
+                                theme_text_color: "Custom"
+                                text_color: DISPENSE_COLOR
+                            
+                            MDLabel:
+                                text: "DISPENSE"
+                                font_style: "H5"
+                                halign: "center"
+                                adaptive_height: True
+                                bold: True
+                                theme_text_color: "Custom"
+                                text_color: DISPENSE_COLOR
+
+            # ปุ่มฟันเฟือง มุมขวาบน
+            MDIconButton:
+                icon: "cog"
+                icon_size: "36sp"
+                pos_hint: {"top": 0.98, "right": 0.98}
+                theme_icon_color: "Custom"
+                icon_color: 0.5, 0.5, 0.5, 1
+                on_release: root.check_admin_permission()
 
         # ส่วนปุ่ม Logout (ล่างสุด)
         MDBoxLayout:

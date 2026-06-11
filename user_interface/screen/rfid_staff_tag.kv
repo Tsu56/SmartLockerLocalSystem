@@ -1,23 +1,65 @@
 #: import get_color_from_hex kivy.utils.get_color_from_hex
 #: set LIGHT_BG get_color_from_hex("#F7F8FC")
+#: set DARK_BLUE get_color_from_hex("#34495E")
+#: set PRIMARY_COLOR get_color_from_hex("#3498DB")
 #: set RED_COLOR get_color_from_hex("#E74C3C")
 
-<RFIDLoginScreen@MDScreen>:
+<RFIDLoginScreen>:
     name: "rfid_staff_tag"
     md_bg_color: LIGHT_BG
 
-    MDRectangleFlatButton:
-        text: "NEXT"
-        pos_hint: {'center_x': 0.5, 'center_y': 0.2}
-        line_color: get_color_from_hex("#11cd3d")
-        theme_text_color: "Custom"
-        text_color: get_color_from_hex("#11cd3d")
-        on_release: app.change_screen("provision_screen")
+    # กล่อง Card ตรงกลางหน้าจอ
+    MDCard:
+        size_hint: None, None
+        size: "400dp", "380dp"
+        pos_hint: {"center_x": 0.5, "center_y": 0.5}
+        elevation: 2
+        radius: [20, 20, 20, 20]
+        padding: "24dp"
+        orientation: "vertical"
+        md_bg_color: 1, 1, 1, 1
 
-    MDRectangleFlatButton:
-        text: "CANCEL"
-        pos_hint: {'center_x': 0.5, 'center_y': 0.1}
-        line_color: RED_COLOR
-        theme_text_color: "Custom"
-        text_color: RED_COLOR
-        on_release: app.go_back()
+        MDBoxLayout:
+            orientation: "vertical"
+            spacing: "15dp"
+            
+            # ไอคอนแสดงการแตะบัตร (แก้ให้อยู่ตรงกลางแล้ว)
+            MDIcon:
+                icon: "contactless-payment-circle"
+                font_size: "100sp"
+                halign: "center"
+                pos_hint: {"center_x": 0.5}  # 👉 เพิ่มบรรทัดนี้เพื่อบังคับให้อยู่กึ่งกลาง
+                theme_text_color: "Custom"
+                text_color: PRIMARY_COLOR
+                size_hint_y: None
+                height: "120dp"
+                
+            # หัวข้อ
+            MDLabel:
+                text: "Login with RFID"
+                font_style: "H5"
+                bold: True
+                halign: "center"
+                theme_text_color: "Custom"
+                text_color: DARK_BLUE
+                size_hint_y: None
+                height: "40dp"
+
+            # คำอธิบาย
+            MDLabel:
+                text: "กรุณานำบัตรพนักงานของคุณ\nมาทาบที่หัวอ่านของตู้ล็อกเกอร์..."
+                halign: "center"
+                theme_text_color: "Secondary"
+                
+            Widget:
+                # ดันปุ่มลงไปด้านล่าง
+                size_hint_y: 1
+
+            # ปุ่มยกเลิก
+            MDRectangleFlatButton:
+                text: "CANCEL"
+                pos_hint: {"center_x": 0.5}
+                line_color: RED_COLOR
+                theme_text_color: "Custom"
+                text_color: RED_COLOR
+                on_release: app.go_back()

@@ -52,6 +52,7 @@ class TransactionCreate(TransactionBase):
 
 class TransactionPublic(TransactionBase):
     transaction_id: int
+    server_transaction_id: Optional[int] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
     # เพิ่มเพื่อเช็คสถานะการส่งข้อมูลขึ้น Cloud
@@ -102,24 +103,6 @@ class RestockPublic(SQLModel):
     status: str
     processed_items: int
     details: List[RestockItemPublic] = []
-
-# --- Snapshot Schemas ---
-class SnapshotBase(SQLModel):
-    image_path: Optional[str] = Field(default=None, description="พาร์ทรูปภาพในเครื่อง Local")
-    transaction_id: int = Field(description="ID ของ Transaction")
-    transaction_detail_id: int = Field(description="ID ของรายละเอียดรายการ")
-    slot_stock_id: int = Field(description="ID ของสต็อกจาก Server (unique index)")
-    camera_id: int = Field(description="ID ของกล้องที่ถ่าย")
-
-class SnapshotCreate(SnapshotBase):
-    pass
-
-class SnapshotPublic(SnapshotBase):
-    snapshot_id: int
-    created_at: datetime
-    # เพิ่มฟิลด์สำคัญสำหรับ Agent
-    is_synced: bool = Field(default=False, description="สถานะการอัปโหลดรูปภาพขึ้น Cloud")
-    synced_at: Optional[datetime] = Field(default=None, description="เวลาที่อัปโหลดรูปสำเร็จ")
 
 # Specialized Response Schemas (สำหรับ Kivy UI)
 

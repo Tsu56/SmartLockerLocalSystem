@@ -1,19 +1,21 @@
 from sqlmodel import SQLModel, Field
 from datetime import datetime, timezone
 from typing import Optional
+from pydantic import BaseModel
 
 # --- User Schemas ---
 class UserBase(SQLModel):
     user_id: str = Field(index=True, unique=True, description="ID ของผู้ใช้ในฝั่ง Server")
     email: str = Field(default=None, index=True, unique=True, description="อีเมลของผู้ใช้")
+    role_id: int = Field(default=4, description="สิทธิ์ผู้ใช้งาน (1=Sys, 2=Org, 3=Dept, 4=User)")
     citizen_id_encrypted: str = Field(index=True, unique=True, description="เลขบัตรประชาชน 13 หลักที่ถูกเข้ารหัสแล้ว")
-    card_uid_hashed: Optional[str] = Field(default=None, index=True, nullable=True, unique=True, description="ค่า Hash ของ UID ของ RFID Staff Tag ที่อ่านได้จากเครื่อง")
+    card_uid: Optional[str] = Field(default=None, index=True, nullable=True, unique=True, description="UID ของ RFID Staff Tag ที่อ่านได้จากเครื่อง")
     qr_uid_hashed: Optional[str] = Field(default=None, index=True, nullable=True, unique=True, description="ค่า Hash ของรหัส QR Code")
     first_name: str = Field(default=None, description="ชื่อจริงของผู้ใช้")
     last_name: str = Field(default=None, description="นามสกุลของผู้ใช้")
 
 class UserCreate(UserBase):
-    card_uid_hashed: Optional[str] = None
+    card_uid: Optional[str] = None
     qr_uid_hashed: Optional[str] = None
     password: str = Field(description="รหัสผ่าน (Plain text ที่จะถูก Hash ก่อนบันทึก)")
 
@@ -42,6 +44,10 @@ class RFIDTagLogin(SQLModel):
 
 class QRCodeLogin(SQLModel):
     qr_raw_data: str = Field(description="ข้อมูลดิบที่อ่านได้จากเครื่องสแกน QR")
+
+class BindRFIDRequest(SQLModel):
+    user_id: str = Field(description="ID ของผู้ใช้ที่ต้องการผูกบัตร")
+    card_uid: str = Field(description="UID ของ RFID Staff Tag ใบใหม่")
 
 # --- User Permissions Schemas ---
 class UserPermissionBase(SQLModel):

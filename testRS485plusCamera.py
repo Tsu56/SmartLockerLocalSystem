@@ -4,10 +4,13 @@ import serial
 import time
 import threading
 import queue
+import cv2
+from PIL import Image, ImageTk
 
 PORT = "/dev/ttyUSB0"  # เปลี่ยนตามเครื่องของคุณ
 BAUDRATE = 38400
 device_addresses = ['S1', 'S2', 'S3', 'S4']
+VIDEO_INDEX = 0
 
 # คำสั่งที่ใช้บ่อยสำหรับใส่ใน Dropdown
 COMMON_COMMANDS = [
@@ -15,14 +18,14 @@ COMMON_COMMANDS = [
     "DOORLOCKON", "DOORLOCKOFF",
     "CAMERAON", "CAMERAOFF",
     "STATUSON", "STATUSOFF",
-    "LEDON", "LEDOFF"
+    "CAMERAPOWERON", "CAMERAPOWEROFF"
 ]
 
-class RS485TesterApp:
+class SmartLockerApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("RS485 Smart Locker Tester")
-        self.root.geometry("600x500")
+        self.root.title("Smart Locker Control Panel (Camera + RS485)")
+        self.root.geometry("1100x600") # ขยายหน้าต่างให้กว้างขึ้นเพื่อรองรับกล้อง
         
         self.ser = None
         self.serial_lock = threading.Lock()
@@ -32,26 +35,41 @@ class RS485TesterApp:
 
         self.setup_ui()
         self.connect_serial()
+        
+        # --- เริ่มระบบกล้อง ---
+        self.cap = cv2.VideoCapture(VIDEO_INDEX)
+        if not self.cap.isOpened():
+            self.log(f"❌ Error: ไม่สามารถเปิดกล้องหมายเลข {VIDEO_INDEX} ได้")
+        else:
+            self.log(f"✅ Camera initialized (Index: {VIDEO_INDEX})")
+            self.update_camera_frame() # เริ่มลูปดึงภาพ
 
         # เริ่มอัปเดต UI จาก Queue
         self.root.after(100, self.process_log_queue)
 
-        # เริ่ม Thread สำหรับ Auto-loop แต่จะยังไม่ส่งจนกว่าจะกดปุ่ม Start
+        # เริ่ม Thread สำหรับ Auto-loop
         self.thread_auto = threading.Thread(target=self.auto_loop, daemon=True)
         self.thread_auto.start()
 
-    def connect_serial(self):
-        try:
-            self.ser = serial.Serial(PORT, BAUDRATE, timeout=0.5)
-            self.log(f"✅ Connected to {PORT} at {BAUDRATE} bps")
-        except Exception as e:
-            self.log(f"❌ Failed to connect to {PORT}: {e}")
-            self.ser = None
-
     def setup_ui(self):
+        # สร้าง Frame หลักแบ่งซ้าย-ขวา
+        main_frame = ttk.Frame(self.root)
+        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # ================= ฝั่งซ้าย: กล้องวงจรปิด =================
+        frame_left = ttk.LabelFrame(main_frame, text="AV Camera Feed", padding=10)
+        frame_left.pack(side="left", fill="both", expand=True, padx=(0, 5))
+
+        self.video_label = ttk.Label(frame_left, text="กำลังโหลดกล้อง หรือ ไม่พบกล้อง...")
+        self.video_label.pack(fill="both", expand=True)
+
+        # ================= ฝั่งขวา: ควบคุม RS485 =================
+        frame_right = ttk.Frame(main_frame)
+        frame_right.pack(side="right", fill="both", expand=True, padx=(5, 0))
+
         # --- Frame บน: ควบคุม Auto Polling ---
-        frame_top = ttk.LabelFrame(self.root, text="Auto Polling (GETDATA)", padding=10)
-        frame_top.pack(fill="x", padx=10, pady=5)
+        frame_top = ttk.LabelFrame(frame_right, text="Auto Polling (GETDATA)", padding=10)
+        frame_top.pack(fill="x", pady=(0, 5))
 
         self.btn_toggle_poll = ttk.Button(frame_top, text="▶ Start Auto-Polling", command=self.toggle_polling)
         self.btn_toggle_poll.pack(side="left", padx=5)
@@ -60,8 +78,8 @@ class RS485TesterApp:
         self.lbl_status.pack(side="left", padx=10)
 
         # --- Frame กลาง: ส่งคำสั่ง Manual ---
-        frame_mid = ttk.LabelFrame(self.root, text="Manual Command", padding=10)
-        frame_mid.pack(fill="x", padx=10, pady=5)
+        frame_mid = ttk.LabelFrame(frame_right, text="Manual Command", padding=10)
+        frame_mid.pack(fill="x", pady=5)
 
         ttk.Label(frame_mid, text="Address:").grid(row=0, column=0, padx=5, pady=5)
         self.cb_address = ttk.Combobox(frame_mid, values=device_addresses, width=5, state="readonly")
@@ -74,29 +92,58 @@ class RS485TesterApp:
         self.cb_command.grid(row=0, column=3, padx=5, pady=5)
 
         self.btn_send = ttk.Button(frame_mid, text="Send Command", command=self.on_send_manual)
-        self.btn_send.grid(row=0, column=4, padx=10, pady=5)
+        self.btn_send.grid(row=1, column=0, columnspan=4, pady=10)
 
         # --- Frame ล่าง: Log แสดงผล ---
-        frame_bottom = ttk.LabelFrame(self.root, text="Communication Log", padding=10)
-        frame_bottom.pack(fill="both", expand=True, padx=10, pady=5)
+        frame_bottom = ttk.LabelFrame(frame_right, text="Communication Log", padding=10)
+        frame_bottom.pack(fill="both", expand=True, pady=(5, 0))
 
-        self.txt_log = scrolledtext.ScrolledText(frame_bottom, wrap=tk.WORD, height=15)
+        self.txt_log = scrolledtext.ScrolledText(frame_bottom, wrap=tk.WORD, height=10)
         self.txt_log.pack(fill="both", expand=True)
         
         btn_clear = ttk.Button(frame_bottom, text="Clear Log", command=lambda: self.txt_log.delete(1.0, tk.END))
         btn_clear.pack(side="right", pady=5)
 
+    # ================= ฟังก์ชันระบบกล้อง =================
+    def update_camera_frame(self):
+        if self.cap.isOpened() and self.running:
+            ret, frame = self.cap.read()
+            if ret:
+                # แปลงสีจาก BGR (OpenCV) เป็น RGB (Pillow/Tkinter)
+                cv_img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                # ปรับขนาดภาพให้พอดีกับ UI (ปรับขนาดได้ตามต้องการ)
+                cv_img = cv2.resize(cv_img, (640, 480)) 
+                
+                # แปลงเป็น Image ของ Tkinter
+                pil_img = Image.fromarray(cv_img)
+                imgtk = ImageTk.PhotoImage(image=pil_img)
+                
+                # อัปเดตภาพลงบน Label
+                self.video_label.imgtk = imgtk
+                self.video_label.configure(image=imgtk, text="")
+            else:
+                self.video_label.configure(text="สัญญาณภาพขาดหาย (No Signal)")
+
+            # วนลูปเรียกฟังก์ชันนี้ซ้ำทุกๆ 30 มิลลิวินาที (~33 FPS)
+            self.root.after(30, self.update_camera_frame)
+
+    # ================= ฟังก์ชันระบบ RS485 (คงเดิม) =================
+    def connect_serial(self):
+        try:
+            self.ser = serial.Serial(PORT, BAUDRATE, timeout=0.5)
+            self.log(f"✅ Connected to {PORT} at {BAUDRATE} bps")
+        except Exception as e:
+            self.log(f"❌ Failed to connect to {PORT}: {e}")
+            self.ser = None
+
     def log(self, message):
-        """ส่งข้อความเข้า Queue เพื่อให้ Thread หลักของ UI นำไปแสดงผล"""
         self.log_queue.put(message)
 
     def process_log_queue(self):
-        """ดึงข้อมูลจาก Queue มาแสดงใน Text widget (ปลอดภัยจากเรื่อง Thread)"""
         while not self.log_queue.empty():
             msg = self.log_queue.get()
             self.txt_log.insert(tk.END, msg + "\n")
-            self.txt_log.see(tk.END) # เลื่อนลงมาล่างสุดอัตโนมัติ
-        
+            self.txt_log.see(tk.END)
         if self.running:
             self.root.after(100, self.process_log_queue)
 
@@ -147,7 +194,6 @@ class RS485TesterApp:
             return raw_line
 
     def auto_loop(self):
-        """Loop ทำงานเบื้องหลัง ส่ง GETDATA ตลอดเวลาถ้าเปิดโหมด Auto"""
         while self.running:
             if self.auto_polling:
                 for addr in device_addresses:
@@ -196,12 +242,15 @@ class RS485TesterApp:
 
     def on_closing(self):
         self.running = False
+        # คืนทรัพยากรกล้องให้ระบบ
+        if hasattr(self, 'cap') and self.cap.isOpened():
+            self.cap.release()
         if self.ser:
             self.ser.close()
         self.root.destroy()
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = RS485TesterApp(root)
+    app = SmartLockerApp(root)
     root.protocol("WM_DELETE_WINDOW", app.on_closing)
     root.mainloop()

@@ -467,9 +467,6 @@ def add_transaction_detail(
     session.commit()
     session.refresh(db_detail)
     
-    # 5. Sync กับ Server ใน Background
-    background_tasks.add_task(sync_transaction_to_server, transaction_id)
-    
     return db_detail
 
 
@@ -610,31 +607,11 @@ def restock_items(
         "details": response_details,
     }
 
-# ==========================================
-# 3. Endpoints สำหรับรูปภาพ (Snapshots)
-# ==========================================
-
-@router.post("/snapshots", response_model=schema.SnapshotPublic)
-def create_snapshot(snapshot: schema.SnapshotCreate, session: Session = Depends(get_session)):
-    """
-    บันทึกข้อมูลภาพถ่ายลง Local Database หลังจากถ่ายรูปเสร็จ
-    เพื่อให้ Image Sync Agent นำไปส่งขึ้น Cloud ต่อไป
-    """
-    db_snapshot = models.Snapshot.model_validate(snapshot)
-    session.add(db_snapshot)
-    session.commit()
-    session.refresh(db_snapshot)
-    return db_snapshot
-
-@router.get("/transactions/{transaction_id}/history", response_model=schema.TransactionWithDetailsPublic)
-def get_transaction_history(transaction_id: int, session: Session = Depends(get_session)):
-    """
-    ดูข้อมูลประวัติรายการ 1 รายการแบบเต็ม พร้อม Details ทัั้งหมด (สำหรับ UI เช็คประวัติ)
-    """
-    transaction = session.get(models.Transaction, transaction_id)
-    if not transaction:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-    return transaction
+@router.post("/transactions/{transaction_id}/complete-sync")
+def complete_transaction_sync(transaction_id: int, background_tasks: BackgroundTasks):
+    """สั่งให้ Sync ขึ้น Cloud Server ครั้งเดียวตอนจบรายการ"""
+    background_tasks.add_task(sync_transaction_to_server, transaction_id)
+    return {"status": "sync_triggered"}
 
 # ==========================================
 # 4. Endpoints สำหรับ Manual Sync (Trigger)
@@ -701,3 +678,11 @@ def trigger_manual_transaction_sync(session: Session = Depends(get_session)):
         "error_count": error_count,
         "details": results
     }
+
+@router.get("/transactions/{transaction_id}", response_model=schema.TransactionPublic)
+def get_transaction(transaction_id: int, session: Session = Depends(get_session)):
+    """ดึงข้อมูล Transaction (ใช้เพื่อให้ Camera Agent มาเช็ค server_transaction_id)"""
+    transaction = session.get(models.Transaction, transaction_id)
+    if not transaction:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return transaction

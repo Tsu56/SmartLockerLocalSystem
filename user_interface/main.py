@@ -8,11 +8,15 @@ from kivy.core.window import Window
 from kivy.core.text import LabelBase, DEFAULT_FONT
 from kivymd.uix.button import MDRaisedButton, MDTextButton
 from kivymd.uix.textfield import MDTextField
+from kivymd.uix.dialog import MDDialog
+from kivymd.uix.button import MDFlatButton
+from kivy.network.urlrequest import UrlRequest
 from controller.id_card_controller import IDCardController, Clock
 import json
 from controller.restock_controller import RestockScreen, MDScreen, MDDataTable, MDBoxLayout
 from controller.dispense_controller import DispenseScreen
-from kivy.network.urlrequest import UrlRequest
+from controller.admin_rfid_controller import AdminRfidScreen
+from controller.rfid_login_controller import RFIDLoginScreen
 
 Window.size = (1024, 600)
 
@@ -52,6 +56,16 @@ def setup_default_thai_font():
                 fn_italic=font["italic"] if os.path.exists(font["italic"]) else font["regular"],
                 fn_bolditalic=font["bolditalic"] if os.path.exists(font["bolditalic"]) else font["regular"],
             )
+
+            LabelBase.register(
+                name="Roboto-Medium",
+                fn_regular=font["bold"] if os.path.exists(font["bold"]) else font["regular"],
+            )
+            LabelBase.register(
+                name="Roboto-Bold",
+                fn_regular=font["bold"] if os.path.exists(font["bold"]) else font["regular"],
+            )
+
             print(f"✅ Using Thai-compatible font: {font['regular']}")
             return
 
@@ -61,6 +75,7 @@ GATEWAY_URL = "http://localhost:5000/api"
 
 AUTH_CARD_URL = f"{GATEWAY_URL}/auth/auth/login/smartcard"
 AUTH_PWD_URL = f"{GATEWAY_URL}/auth/auth/login/password"
+AUTH_RFID_URL = f"{GATEWAY_URL}/auth/auth/login/rfid"
 QR_TASK_RESOLVE_URL = f"{GATEWAY_URL}/product/locker/qr-tasks/resolve"
 QR_TASK_COMPLETE_BASE_URL = f"{GATEWAY_URL}/product/locker/qr-tasks"
 
@@ -77,6 +92,7 @@ KV_FILES = [
     "screen/dispense_screen.kv",
     "screen/restock_screen.kv",
     "screen/provision_screen.kv",
+    "screen/admin_rfid_screen.kv",
 ]
 
 screen_helper = """
@@ -91,9 +107,47 @@ MDScreenManager:
     RestockScreen:
     DispenseScreen:
     ProvisionScreen:
+    AdminRfidScreen:
 """
 
 class HomeScreen(MDScreen):
+    dialog = None
+
+    def check_admin_permission(self):
+        app = MDApp.get_running_app()
+        current_role_id = app.current_user_role_id
+        if current_role_id <= 3:
+            self.manager.current = "admin_rfid_screen"
+        else:
+            self.show_access_denied_dialog()
+
+    def show_access_denied_dialog(self):
+        if not self.dialog:
+            self.dialog = MDDialog(
+                title="[color=#d93838]Access Denied[/color]", # ใช้โค้ดสีแดงใน Title
+                text="ขออภัย คุณไม่มีสิทธิ์เข้าถึงเมนูการตั้งค่าสำหรับผู้ดูแลระบบครับ\nกรุณาติดต่อ System Admin หากต้องการความช่วยเหลือ",
+                radius=[20, 20, 20, 20], # ขอบมนหนาๆ ตามธีมตู้ของคุณ
+                buttons=[
+                    MDFlatButton(
+                        text="ตกลง",
+                        theme_text_color="Custom",
+                        text_color=[0.1, 0.3, 0.8, 1], # สีน้ำเงินตามธีมของหน้า Dispense
+                        on_release=lambda x: self.dialog.dismiss()
+                    )
+                ],
+            )
+        self.dialog.open()
+
+    def on_pre_enter(self):
+        """ทำงานก่อนที่หน้าจอนี้จะแสดงผล"""
+        if "username_field" in self.ids:
+            self.ids.username_field.text = ""
+            self.ids.username_field.error = False
+            
+        if "password_field" in self.ids:
+            self.ids.password_field.text = ""
+            self.ids.password_field.error = False
+
     def on_enter(self):
         app = MDApp.get_running_app()
         if app.user_permissions.get("can_withdraw"):
@@ -116,6 +170,7 @@ class SmartLockerApp(MDApp):
     user_id = StringProperty("")
     user_permissions = DictProperty({"can_withdraw": False, "can_restock": False})
     current_qr_task = DictProperty({})
+    current_user_role_id = NumericProperty(4)
 
     status_error_color = [0.906, 0.298, 0.235, 1]      # Red
     status_success_color = [0.18, 0.8, 0.443, 1]    # Green
@@ -125,6 +180,10 @@ class SmartLockerApp(MDApp):
         setup_default_thai_font()
         self.theme_cls.theme_style = "Light"
         self.theme_cls.primary_palette = "Blue"
+
+        for style in self.theme_cls.font_styles.keys():
+            if "Icon" not in style:  
+                self.theme_cls.font_styles[style][0] = "Thai"
 
         self.id_card_controller = IDCardController()
         self.id_card_controller.bind(card_data=self.handle_card_data)
@@ -258,20 +317,37 @@ class SmartLockerApp(MDApp):
             timeout=10
         )
 
+    def process_rfid_login_request(self, card_uid):
+        print(f"DEBUG: Connecting to API for RFID: {card_uid}")
+        
+        payload = json.dumps({
+            "card_uid": card_uid.strip()
+        })
+        
+        headers = {'Content-type': 'application/json', 'Accept': 'application/json'}
+        
+        # ยิงไปที่ API Login RFID แล้วให้โยนกลับไปหาฟังก์ชัน Success เดิมที่คุณมีอยู่แล้ว!
+        UrlRequest(
+            AUTH_RFID_URL,
+            req_body=payload,
+            req_headers=headers,
+            on_success=self._on_login_success,
+            on_failure=self._on_login_failed,
+            on_error=self._on_login_error,
+            method='POST',
+            timeout=10
+        )
+
     def _on_login_success(self, request, result):
         """กรณี Login สำเร็จ (HTTP 200)"""
-        user_data = result.get("user", {})
-
-        self.user_id = user_data.get("user_id", "")
-        self.user_permissions = user_data.get("permissions", {"can_withdraw": False, "can_restock": False})
-
         # ตรวจสอบโครงสร้างข้อมูล (รองรับทั้งแบบมีคีย์ 'user' ครอบ และแบบส่ง object มาตรงๆ)
         if isinstance(result, dict):
             # ถ้ามีคีย์ 'user' ให้ดึงมา ถ้าไม่มีให้ถือว่า result คือข้อมูล user เลย
             user_data = result.get("user") if "user" in result else result
-            
-            # ดึงชื่อแสดงผล โดยลองจาก full_name -> username -> ค่าเริ่มต้น "User"
-            # ใช้ .get() และตรวจสอบว่าเป็น None หรือไม่
+
+            self.user_id = user_data.get("user_id", "")
+            self.user_permissions = user_data.get("permissions", {"can_withdraw": False, "can_restock": False})
+            self.current_user_role_id = user_data.get("role_id", 4)
             full_name = user_data.get("full_name") or user_data.get("username") or "User"
             username = user_data.get("username", "Unknown")
             
@@ -349,21 +425,33 @@ class SmartLockerApp(MDApp):
 
     def go_to_dispense(self):
         print("Navigating to Dispense Mode")
-        # เตรียม Logic สำหรับเปลี่ยนหน้าไปหน้าเบิกของ
-        # self.change_screen("dispense_screen") 
         self.change_screen("dispense_screen")
 
     def go_to_restock(self):
         print("Navigating to Restock Mode")
-        # เตรียม Logic สำหรับเปลี่ยนหน้าไปหน้าเติมของ
         self.change_screen("restock_screen")
 
     def logout(self):
         print("Logging out...")
-        # เคลียร์ค่าต่างๆ ถ้าจำเป็น
+        # เคลียร์ค่าต่างๆ (ของเดิม)
         self.user_id = ""
         self.user_permissions = {"can_withdraw": False, "can_restock": False}
         self.current_qr_task = {}
+        
+        # 👉 1. เจาะเข้าไปหาหน้า user_pass_login ให้ถูกตัว!
+        try:
+            login_screen = self.root.get_screen("user_pass_login")
+            
+            # 👉 2. สั่งเคลียร์ค่าช่อง Text Field
+            if "username_field" in login_screen.ids:
+                login_screen.ids.username_field.text = ""
+                
+            if "password_field" in login_screen.ids:
+                login_screen.ids.password_field.text = ""
+                
+        except Exception as e:
+            print(f"ไม่สามารถเคลียร์ช่องกรอกข้อมูลได้: {e}")
+
         self.change_screen("main_screen")
         self.show_toast("ออกจากระบบเรียบร้อยแล้ว")
 

@@ -63,7 +63,16 @@ class SlotSelectCard(MDCard):
         current_qty = sum(p["qty"] for p in slot_info["products"])
         capacity = slot_info["capacity"]
 
-        # ถ้าระบุ filter_product_id → เช็คว่าช่องนี้มียาที่ต้องการหรือไม่
+        # 👉 1. กรองหา active_products เพื่อดูว่า "ปัจจุบันช่องนี้มียาอะไรวางอยู่จริงๆ"
+        active_products = [p for p in slot_info["products"] if p["qty"] > 0]
+        if active_products:
+            default_top_name = active_products[0]["name"]
+            default_top_qty = active_products[0]["qty"]
+        else:
+            default_top_name = "ว่าง"
+            default_top_qty = 0
+
+        # ถ้าระบุ filter_product_id → เช็คว่าช่องนี้มียาที่ต้องการเบิกหรือไม่
         if filter_product_id is not None:
             product_in_slot = next(
                 (p for p in slot_info["products"] if p["id"] == filter_product_id),
@@ -81,8 +90,9 @@ class SlotSelectCard(MDCard):
                 card_bg = (0.93, 0.93, 0.93, 1)
                 status_text = "ไม่มียานี้"
                 can_select = False
-                top_name = "ไม่มียานี้" if not slot_info["products"] else slot_info["products"][0]["name"]
-                top_qty = 0
+                # 👉 2. แสดงชื่อและจำนวนยาตัวอื่น ที่กำลังยึดพื้นที่ช่องนี้อยู่แทน
+                top_name = default_top_name
+                top_qty = default_top_qty
         else:
             if current_qty == 0:
                 border_color = (0.11, 0.77, 0.36, 1)
@@ -100,12 +110,8 @@ class SlotSelectCard(MDCard):
                 status_text = "มียาบางส่วน"
                 can_select = True
 
-            if slot_info["products"]:
-                top_name = slot_info["products"][0]["name"]
-                top_qty = slot_info["products"][0]["qty"]
-            else:
-                top_name = "ว่าง"
-                top_qty = 0
+            top_name = default_top_name
+            top_qty = default_top_qty
 
         self.line_color = border_color
         self.line_width = 1.2
@@ -631,6 +637,8 @@ class DispenseScreen(MDScreen):
         self.selected_slot = slot_info
         if self.slot_dialog:
             self.slot_dialog.dismiss()
+            
+        # ในหน้าเบิกยา พอเลือกช่องเสร็จ ให้เปิดหน้าต่างกรอกรายละเอียด (Detail Dialog) ทันที
         self._open_add_detail_dialog()
 
     def open_date_picker(self):
@@ -875,7 +883,25 @@ class DispenseScreen(MDScreen):
             toast("ไม่พบข้อมูลผู้ใช้ กรุณาเข้าสู่ระบบใหม่")
             return
 
-        # สร้าง Transaction header ก่อน
+        # 👉 1. สั่งบันทึกข้อมูลเข้า DB ก่อนเปิดตู้ เพื่อเอารหัส Transaction!
+        success, result = self._save_transaction_to_api()
+        if not success:
+            toast(result) # ถ้าพังให้โชว์ error แล้วหยุดเลย
+            return
+            
+        transaction_id = result # ดึงรหัสที่เพิ่งสร้างเสร็จมาเก็บไว้
+
+        slots_to_open = list(set([f"S{item['slot_label']}" for item in self.cart_items]))
+        slots_to_open.sort() 
+        # 👉 2. โยน transaction_id ส่งต่อให้ระบบฮาร์ดแวร์
+        self.start_hardware_queue(slots_to_open, transaction_id)
+
+    def _save_transaction_to_api(self):
+        """ยิง API เพื่อตัดสต็อก จะถูกเรียกจาก Background Thread (ไม่ทำให้จอค้าง)"""
+        import requests
+        app = MDApp.get_running_app()
+        user_id = getattr(app, "user_id", "").strip() if app else ""
+
         transaction_payload = {
             "user_id": user_id,
             "activity": "dispense",
@@ -884,40 +910,18 @@ class DispenseScreen(MDScreen):
 
         try:
             # 1. สร้าง Transaction
-            transaction_response = requests.post(
-                f"{API_BASE_URL}/transactions",
-                json=transaction_payload,
-                timeout=10,
-            )
-
+            transaction_response = requests.post(f"{API_BASE_URL}/transactions", json=transaction_payload, timeout=10)
             if transaction_response.status_code != 200:
-                detail_message = ""
-                try:
-                    detail_message = transaction_response.json().get("detail", "")
-                except ValueError:
-                    detail_message = transaction_response.text
-                toast(f"เกิดข้อผิดพลาด: {detail_message or transaction_response.status_code}")
-                return
+                return False, "เกิดข้อผิดพลาดในการสร้าง Transaction"
 
-            transaction_data = transaction_response.json()
-            transaction_id = transaction_data.get("transaction_id")
+            transaction_id = transaction_response.json().get("transaction_id")
 
-            # 2. เพิ่ม Transaction Details แต่ละรายการ
+            # 2. สร้าง Transaction Details (ตัดสต็อก)
             for item in self.cart_items:
-                slot_info = next(
-                    (s for s in self.slots_data if s.get("slot_id_from_server") == item.get("slot_id")),
-                    None,
-                )
-                slot_stock_id = self._resolve_slot_stock_id(
-                    slot_info,
-                    item.get("id"),
-                    item.get("lot_id"),
-                    item.get("slot_stock_id"),
-                )
+                slot_info = next((s for s in self.slots_data if s.get("slot_id_from_server") == item.get("slot_id")), None)
+                slot_stock_id = self._resolve_slot_stock_id(slot_info, item.get("id"), item.get("lot_id"), item.get("slot_stock_id"))
 
-                if slot_stock_id in (None, ""):
-                    toast(f"ไม่พบ slot_stock_id ของ LOT {item.get('lot_id', '-')}")
-                    continue
+                if slot_stock_id in (None, ""): continue
 
                 detail_payload = {
                     "transaction_id": transaction_id,
@@ -926,26 +930,120 @@ class DispenseScreen(MDScreen):
                     "slot_stock_id": slot_stock_id,
                     "amount": item["quantity"]
                 }
+                requests.post(f"{API_BASE_URL}/transactions/{transaction_id}/details", json=detail_payload, timeout=10)
+            
+            requests.post(f"{API_BASE_URL}/transactions/{transaction_id}/complete-sync", timeout=5)
 
-                detail_response = requests.post(
-                    f"{API_BASE_URL}/transactions/{transaction_id}/details",
-                    json=detail_payload,
-                    timeout=10,
-                )
+            return True, transaction_id
+        except Exception as e:
+            return False, f"ข้อผิดพลาดจากเซิร์ฟเวอร์: {str(e)}"
 
-                if detail_response.status_code != 200:
-                    toast(f"เกิดข้อผิดพลาดในการบันทึกรายการ: {item['name']}")
-                    continue
+    def start_hardware_queue(self, slots_queue, transaction_id):
+        import threading
+        
+        # 1. สร้าง Dialog แจ้งสถานะผู้ใช้ (ห้ามกดปิดเอง)
+        self.hw_dialog_label = MDLabel(
+            text="กำลังเตรียมระบบฮาร์ดแวร์...", 
+            halign="center", 
+            theme_text_color="Primary",
+            font_style="H6"
+        )
+        self.hw_dialog = MDDialog(
+            title="กรุณาเปิดตู้และหยิบยาตามลำดับ",
+            type="custom",
+            content_cls=self.hw_dialog_label,
+            auto_dismiss=False, 
+        )
+        self.hw_dialog.open()
+        
+        # 2. สั่ง Thread เบื้องหลังไปไล่เปิดทีละบาน
+        threading.Thread(target=self._run_hardware_sequence, args=(slots_queue, transaction_id), daemon=True).start()
 
-        except requests.RequestException as e:
-            toast(f"ข้อผิดพลาด: {str(e)}")
-            return
+    def _run_hardware_sequence(self, slots_queue, transaction_id):
+        import time
+        import requests
+        from kivy.clock import Clock
+        from kivymd.app import MDApp
+        
+        HARDWARE_API = "http://localhost:8003/api/device/door"
+        
+        for slot in slots_queue:
+            Clock.schedule_once(lambda dt, s=slot: setattr(
+                self.hw_dialog_label, 
+                'text', 
+                f"⏳ กำลังเตรียมระบบตู้ {s}...\n(โปรดรอจนกว่าไฟสถานะสีเขียวจะสว่าง)"
+            ), 0)
+            
+            try:
+                requests.post(f"{HARDWARE_API}/open", json={"address": slot, "transaction_id": str(transaction_id)}, timeout=15)
+            except Exception as e:
+                print(f"⚠️ Error opening slot {slot}: {e}")
+                
+            # --- วนลูปรอจนกว่าตู้จะ "เปิด" ---
+            door_opened = False
+            wait_time = 0
+            # ⏳ ให้เวลาผู้ใช้เดินไปเปิดตู้สูงสุด 60 วินาที
+            while wait_time < 60.0:  
+                try:
+                    res = requests.get(f"{HARDWARE_API}/status/{slot}", timeout=2).json()
+                    if res.get("status") == "OPEN":
+                        door_opened = True
+                        Clock.schedule_once(lambda dt, s=slot: setattr(self.hw_dialog_label, 'text', f"🔓 ตู้ {s} เปิดแล้ว!\nหยิบยาให้ครบแล้ว กรุณาปิดให้สนิทครับ"), 0)
+                        try:
+                            # สั่งตัดไฟกลอนแม่เหล็ก เพื่อให้ตอนดันประตูปิดมันล็อกได้เลย
+                            requests.post(f"{HARDWARE_API}/close", json={"address": slot, "transaction_id": str(transaction_id)}, timeout=2)
+                        except:
+                            pass
+                        break
+                except:
+                    pass
+                time.sleep(0.5)
+                wait_time += 0.5
+                
+            # ถ้าครบ 60 วินาทีแล้วประตูยังไม่ถูกเปิด
+            if not door_opened:
+                try:
+                    requests.post(f"{HARDWARE_API}/close", json={"address": slot, "transaction_id": str(transaction_id)}, timeout=2) 
+                    requests.post(f"{HARDWARE_API}/status-light/off", json={"address": slot, "transaction_id": str(transaction_id)}, timeout=2) 
+                except:
+                    pass
+                print(f"⚠️ หมดเวลารอ! ประตู {slot} ไม่ถูกเปิดออก")
+                continue # ข้ามไปคิวของตู้ถัดไป
+                
+            # --- วนลูปรอปิดประตู ---
+            while door_opened:
+                try:
+                    res = requests.get(f"{HARDWARE_API}/status/{slot}", timeout=2).json()
+                    if res.get("status") == "CLOSED":
+                        Clock.schedule_once(lambda dt, s=slot: setattr(self.hw_dialog_label, 'text', f"✅ ตู้ {s} ปิดเรียบร้อย\nกำลังบันทึกภาพ..."), 0)
+                        break
+                except:
+                    pass
+                time.sleep(0.5)
+                
+            # ปิดไฟสถานะหน้าตู้
+            try:
+                requests.post(f"{HARDWARE_API}/status-light/off", json={"address": slot, "transaction_id": str(transaction_id)}, timeout=3)
+            except:
+                pass
+            
+            # ⏳ รอ 4 วินาที ให้ Camera Service ถ่ายรูป After และส่งคำสั่งตัด Relay กล้องให้เสร็จสมบูรณ์ ก่อนเริ่มตู้ถัดไป
+            print(f"⏳ รอระบบกล้องตู้ {slot} เคลียร์ตัวเอง 4 วินาที...")
+            time.sleep(4) 
+            
+        Clock.schedule_once(lambda dt: setattr(self.hw_dialog_label, 'text', "ปิดตู้ครบถ้วน..."), 0)
+        Clock.schedule_once(lambda dt: self._on_hardware_sequence_complete("ทำรายการเบิกยาสำเร็จและปิดตู้ครบถ้วน!"), 0)
 
-        # ล้างตะกร้าและโหลดข้อมูลใหม่
+    def _on_hardware_sequence_complete(self, msg):
+        # เคลียร์หน้าจอ และโหลดหน้าตะกร้าใหม่
+        self.hw_dialog.dismiss()
         self.cart_items.clear()
-        self.load_data_from_api()  # รีโหลดข้อมูลจาก API
+        self.load_data_from_api()  
         self.refresh_cart_view()
         self.render_medicine_rows()
+        
+        app = MDApp.get_running_app()
         if app and hasattr(app, "complete_active_qr_task"):
             app.complete_active_qr_task()
-        toast("บันทึกการเบิกยาสำเร็จ")
+            
+        toast(msg)

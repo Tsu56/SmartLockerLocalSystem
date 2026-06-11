@@ -15,7 +15,7 @@ from database.models import User, UserPermission, AuthLog, ProcessedEvent
 from database.schema import (
     UserCreate, UserPublic, UserLogin,
     SmartCardLogin, RFIDTagLogin, QRCodeLogin,
-    AuthLogCreate, AuthLogPublic
+    AuthLogCreate, AuthLogPublic, BindRFIDRequest
 )
 from encryption import encrypt_data, decrypt_data
 from getkey import get_internal_shared_secret, get_search_hash_salt, get_mqtt_config
@@ -142,6 +142,7 @@ def process_user_sync(session, u_data):
     user.first_name = user_info.get("first_name")
     user.last_name = user_info.get("last_name")
     user.hashed_password = user_info.get("password")
+    user.role_id = user_info.get("role_id", 4)
     # เข้ารหัส citizen_id_encrypted ก่อนบันทึกลงฐานข้อมูล
     raw_citizen_id = user_info.get("citizen_id")
     if raw_citizen_id:
@@ -401,6 +402,64 @@ async def trigger_sync(background_tasks: BackgroundTasks):
     background_tasks.add_task(run_user_sync_logic)
     return {"message": "User sync process triggered in background"}
 
+def sync_rfid_to_cloud(user_id: str, card_uid: str):
+    """ฟังก์ชันทำงานเบื้องหลังเพื่อส่งข้อมูลกลับไปหา Server หลัก"""
+    url = f"{CLOUD_SERVER_URL}/user/syncRfid" 
+    payload = {"user_id": user_id, "card_uid": card_uid}
+    
+    try:
+        # 👉 1. เดินไปขอ Headers จาก Identity Service ภายในตู้ก่อน
+        auth_res = requests.get(
+            IDENTITY_SERVICE_URL, 
+            headers={"X-Internal-Secret": INTERNAL_SECRET},
+            timeout=5
+        )
+        
+        if auth_res.status_code == 200:
+            cloud_headers = auth_res.json() # ได้ Token ของตู้มาแล้ว!
+            
+            # 👉 2. ยิงออก Cloud โดยแนบ cloud_headers ไปให้ Middleware ของเพื่อน
+            response = requests.post(
+                url, 
+                json=payload, 
+                headers=cloud_headers, 
+                timeout=5
+            )
+            
+            if response.status_code == 200:
+                print(f"✅ Cloud Sync Success for RFID: {card_uid}")
+            else:
+                print(f"❌ Cloud Sync Error (Status {response.status_code}): {response.text}")
+        else:
+            print("⚠️ ไม่สามารถขอ Headers จาก Identity Service ได้ (ตู้ยังไม่ได้ Activate หรือเปล่า?)")
+            
+    except Exception as e:
+        print(f"⚠️ Cloud Sync Failed for RFID: {e}")
+
+# แก้ Endpoint เดิมให้สมบูรณ์
+@router.post("/user/bind-rfid")
+def bind_rfid(
+    request: BindRFIDRequest, 
+    background_tasks: BackgroundTasks, # 👉 เพิ่ม BackgroundTasks เข้ามารับงาน
+    session: SessionDep                # 👉 แก้จาก Depends(get_session) เป็น SessionDep
+):
+    # 1. ค้นหา User จากฐานข้อมูล
+    user = session.exec(select(User).where(User.user_id == request.user_id)).first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # 2. อัปเดตข้อมูลและบันทึกลง SQLite ในตู้
+    user.card_uid = request.card_uid
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+
+    # 👉 3. ฝาก Background Task ยิง API ไปหา Server เพื่อนคุณ
+    background_tasks.add_task(sync_rfid_to_cloud, request.user_id, request.card_uid)
+    
+    return {"status": "success", "message": "RFID successfully bound and syncing to cloud"}
+
 # --- Login Logic ---
 
 @router.post("/login/password")
@@ -452,6 +511,7 @@ def login_with_password(login_data: UserLogin, session: SessionDep):
         "user": {
             "user_id": user.user_id,
             "full_name": f"{user.first_name} {user.last_name}",
+            "role_id": user.role_id,
             "permissions": {
                 "can_withdraw": bool(permission.permission_withdraw) if permission else True,
                 "can_restock": bool(permission.permission_restock) if permission else False
@@ -497,6 +557,51 @@ def login_with_smartcard(login_in: SmartCardLogin, session: SessionDep):
         "user": {
             "user_id": user.user_id,
             "full_name": f"{user.first_name} {user.last_name}",
+            "role_id": user.role_id,
+            "permissions": {
+                "can_withdraw": bool(permission.permission_withdraw) if permission else True,
+                "can_restock": bool(permission.permission_restock) if permission else False
+            }
+        }
+    }
+
+@router.post("/login/rfid")
+def login_with_rfid(login_in: RFIDTagLogin, session: SessionDep):
+    """เข้าสู่ระบบด้วยการแตะบัตร RFID Staff Tag"""
+    raw_card_uid = login_in.card_uid.strip()
+    
+    # ค้นหา User จาก card_uid โดยตรง (ดักเฉพาะคนที่ยังไม่ถูกลบ)
+    statement = select(User).where(
+        User.card_uid == raw_card_uid,
+        User.deleted_at == None
+    )
+    user = session.exec(statement).first()
+    
+    if not user:
+        # หากไม่เจอบัตร ให้บันทึก Log ว่า Failed
+        log = AuthLog(login_method="rfid", status="failed")
+        session.add(log)
+        session.commit()
+        raise HTTPException(status_code=401, detail="ไม่พบข้อมูลผู้ใช้จากบัตร RFID ใบนี้")
+    
+    # ดึงสิทธิ์การใช้งานของพนักงานคนนี้
+    perm_stmt = select(UserPermission).where(
+        UserPermission.user_id == user.user_id,
+        UserPermission.deleted_at == None
+    )
+    permission = session.exec(perm_stmt).first()
+
+    # บันทึก Log การเข้าสู่ระบบสำเร็จ
+    log = AuthLog(user_id=user.user_id, username=f"RFID:{raw_card_uid}", login_method="rfid", status="success")
+    session.add(log)
+    session.commit()
+    
+    return {
+        "message": "Login successful", 
+        "user": {
+            "user_id": user.user_id,
+            "full_name": f"{user.first_name or ''} {user.last_name or ''}".strip() or "User",
+            "role_id": user.role_id,
             "permissions": {
                 "can_withdraw": bool(permission.permission_withdraw) if permission else True,
                 "can_restock": bool(permission.permission_restock) if permission else False

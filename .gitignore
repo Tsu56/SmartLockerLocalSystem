@@ -8,3 +8,5 @@ __pycache__/
 .vscode
 test
 secret
+/device_communication_service/device_communication_service_venv/
+/camera_service/camera_venv/

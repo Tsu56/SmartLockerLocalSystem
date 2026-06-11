@@ -19,7 +19,7 @@ from database.schema import (
 )
 from encryption import encrypt_data, decrypt_data
 from getkey import get_internal_shared_secret
-from slot_sync_agent import run_slot_sync_logic
+from slot_sync_agent import run_slot_sync_logic, start_slot_sync_agent
 
 router = APIRouter(prefix="/device", tags=["Device Identification"])
 
@@ -277,6 +277,3 @@ async def trigger_slot_sync(background_tasks: BackgroundTasks):
     """
     background_tasks.add_task(run_slot_sync_logic)
     return {"message": "Slot sync process triggered in background"}
-
-heartbeat_thread = threading.Thread(target=heartbeat_agent, daemon=True)
-heartbeat_thread.start()

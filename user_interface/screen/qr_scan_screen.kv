@@ -22,7 +22,7 @@
             font_style: "H5"
 
         MDLabel:
-            text: "หลังยืนยันตัวตนแล้ว กรุณาสแกนหรือวาง QR token เพื่อดึงรายการที่ได้รับมอบหมาย"
+            text: "กรุณาสแกนหรือวาง QR token เพื่อดึงรายการที่ได้รับมอบหมาย"
             halign: "center"
             theme_text_color: "Secondary"
 
@@ -42,7 +42,7 @@
                 MDTextField:
                     id: qr_token_input
                     hint_text: "QR token / task code"
-                    helper_text: "สแกนแล้วระบบจะตรวจสอบอัตโนมัติ (รองรับเครื่องสแกนที่ส่ง Enter)"
+                    helper_text: "สแกนแล้วระบบจะตรวจสอบอัตโนมัติ"
                     helper_text_mode: "persistent"
                     multiline: False
                     on_text_validate: app.handle_qr_submit(self.text)

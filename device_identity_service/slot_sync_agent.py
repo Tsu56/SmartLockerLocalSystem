@@ -249,7 +249,8 @@ def slot_sync_mqtt_agent():
             time.sleep(20)
             continue
 
-        client = mqtt.Client(client_id=cfg["client_id"], clean_session=False)
+        unique_client_id = f"{cfg['client_id']}_device"
+        client = mqtt.Client(client_id=unique_client_id, clean_session=False)
         client.username_pw_set(cfg["username"], cfg["password"])
         client.tls_set()
 
@@ -257,6 +258,9 @@ def slot_sync_mqtt_agent():
             if rc == 0:
                 client_obj.subscribe(cfg["topic"], qos=1)
                 print(f"✅ [Slot MQTT] Connected and subscribed: {cfg['topic']}")
+
+                print("🔄 [Slot MQTT] กำลังทำ Initial Sync กวาดข้อมูลตอนเปิดเครื่อง...")
+                threading.Thread(target=run_slot_sync_logic, daemon=True).start()
             else:
                 print(f"❌ [Slot MQTT] Connect failed rc={rc}")
 

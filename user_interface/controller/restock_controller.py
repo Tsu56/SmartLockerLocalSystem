@@ -107,8 +107,11 @@ class SlotSelectCard(MDCard):
         header.add_widget(slot_chip)
         header.add_widget(MDLabel())
 
-        if slot_info["products"]:
-            top_product = slot_info["products"][0]
+        # 👉 กรองเอาเฉพาะยาที่จำนวนมากกว่า 0 จริงๆ มาใช้แสดงผลบนการ์ด
+        active_products = [p for p in slot_info["products"] if p["qty"] > 0]
+
+        if active_products:
+            top_product = active_products[0]
             top_name = top_product["name"]
             top_qty = top_product["qty"]
         else:
@@ -615,8 +618,10 @@ class RestockScreen(MDScreen):
         capacity = slot_info["capacity"]
         self.slot_button.text = f"ช่องที่ {slot_info['slot']}  ({current_qty}/{capacity} หน่วย)"
 
-        if slot_info["products"]:
-            product_text = ", ".join([f"{p['name']} {p['qty']}mg" if "mg" not in p['name'] else p['name'] for p in slot_info["products"]])
+        active_products = [p for p in slot_info["products"] if p["qty"] > 0]
+
+        if active_products:
+            product_text = ", ".join([f"{p['name']} ({p['qty']} หน่วย)" for p in active_products])
             self.slot_info_label.text = f"ยาที่มีอยู่: {product_text}"
             self.slot_info_label.theme_text_color = "Custom"
             self.slot_info_label.text_color = (0.75, 0.45, 0.05, 1)
@@ -872,6 +877,23 @@ class RestockScreen(MDScreen):
             toast("ไม่พบข้อมูลผู้ใช้ กรุณาเข้าสู่ระบบใหม่")
             return
 
+        success, result = self._save_transaction_to_api()
+        if not success:
+            toast(result)
+            return
+            
+        transaction_id = result
+
+        slots_to_open = list(set([f"S{item['slot_label']}" for item in self.cart_items]))
+        slots_to_open.sort() 
+        self.start_hardware_queue(slots_to_open, transaction_id)
+    
+    def _save_transaction_to_api(self):
+        """ยิง API เพื่อตัดสต็อก จะถูกเรียกจาก Background Thread (ไม่ทำให้จอค้าง)"""
+        import requests
+        app = MDApp.get_running_app()
+        user_id = getattr(app, "user_id", "").strip() if app else ""
+
         payload = {
             "user_id": user_id,
             "items": [
@@ -887,30 +909,124 @@ class RestockScreen(MDScreen):
         }
 
         try:
-            restock_response = requests.post(
-                f"{API_BASE_URL}/restock",
-                json=payload,
-                timeout=10,
-            )
-
+            # ใช้ Endpoint /restock ตามที่เราออกแบบไว้ใน api.py
+            restock_response = requests.post(f"{API_BASE_URL}/restock", json=payload, timeout=10)
             if restock_response.status_code != 200:
-                detail_message = ""
+                detail_message = restock_response.json().get("detail", "") if "application/json" in restock_response.headers.get("content-type", "") else restock_response.text
+                return False, f"เกิดข้อผิดพลาด: {detail_message or restock_response.status_code}"
+
+            transaction_id = restock_response.json().get("transaction_id")
+            return True, transaction_id
+        except Exception as e:
+            return False, f"ข้อผิดพลาดจากเซิร์ฟเวอร์: {str(e)}"
+
+    def start_hardware_queue(self, slots_queue, transaction_id):
+        import threading
+        
+        # สร้าง Pop-up บล็อกหน้าจอ
+        self.hw_dialog_label = MDLabel(
+            text="กำลังเตรียมระบบฮาร์ดแวร์...", 
+            halign="center", 
+            theme_text_color="Primary",
+            font_style="H6"
+        )
+        self.hw_dialog = MDDialog(
+            title="กรุณาเปิดตู้และเติมยาตามลำดับ",  # เปลี่ยนเป็น "เติมยา"
+            type="custom",
+            content_cls=self.hw_dialog_label,
+            auto_dismiss=False, 
+        )
+        self.hw_dialog.open()
+        
+        # เรียก Thread เบื้องหลังไปจัดการตู้
+        threading.Thread(target=self._run_hardware_sequence, args=(slots_queue, transaction_id), daemon=True).start()
+
+    def _run_hardware_sequence(self, slots_queue, transaction_id):
+        import time
+        import requests
+        from kivy.clock import Clock
+        
+        HARDWARE_API = "http://localhost:8003/api/device/door"
+        
+        for slot in slots_queue:
+            Clock.schedule_once(lambda dt, s=slot: setattr(
+                self.hw_dialog_label, 
+                'text', 
+                f"⏳ กำลังเตรียมระบบตู้ {s}...\n(โปรดรอจนกว่าไฟสถานะสีเขียวจะสว่าง)"
+            ), 0)
+            
+            try:
+                requests.post(f"{HARDWARE_API}/open", json={"address": slot, "transaction_id": str(transaction_id)}, timeout=15)
+            except Exception as e:
+                print(f"⚠️ Error opening slot {slot}: {e}")
+                
+            # --- วนลูปรอจนกว่าตู้จะ "เปิด" ---
+            door_opened = False
+            wait_time = 0
+            # ⏳ จุดแก้ที่ 2: ให้เวลาผู้ใช้เดินไปเปิดตู้สูงสุด 60 วินาที
+            while wait_time < 60.0:  
                 try:
-                    detail_message = restock_response.json().get("detail", "")
-                except ValueError:
-                    detail_message = restock_response.text
-                toast(f"เกิดข้อผิดพลาด: {detail_message or restock_response.status_code}")
-                return
+                    res = requests.get(f"{HARDWARE_API}/status/{slot}", timeout=2).json()
+                    if res.get("status") == "OPEN":
+                        door_opened = True
+                        Clock.schedule_once(lambda dt, s=slot: setattr(self.hw_dialog_label, 'text', f"🔓 ตู้ {s} เปิดแล้ว!\nหยิบยาให้ครบแล้ว กรุณาปิดให้สนิทครับ"), 0)
+                        try:
+                            # สั่งตัดไฟกลอนแม่เหล็ก เพื่อให้ตอนดันประตูปิดมันล็อกได้เลย
+                            requests.post(f"{HARDWARE_API}/close", json={"address": slot, "transaction_id": str(transaction_id)}, timeout=2)
+                        except:
+                            pass
+                        break
+                except:
+                    pass
+                time.sleep(0.5)
+                wait_time += 0.5
+                
+            # ถ้าครบ 60 วินาทีแล้วประตูยังไม่ถูกเปิด
+            if not door_opened:
+                try:
+                    requests.post(f"{HARDWARE_API}/close", json={"address": slot, "transaction_id": str(transaction_id)}, timeout=2) 
+                    requests.post(f"{HARDWARE_API}/status-light/off", json={"address": slot, "transaction_id": str(transaction_id)}, timeout=2) 
+                except:
+                    pass
+                print(f"⚠️ หมดเวลารอ! ประตู {slot} ไม่ถูกเปิดออก")
+                continue # ข้ามไปคิวของตู้ถัดไป
+                
+            # --- วนลูปรอปิดประตู ---
+            while door_opened:
+                try:
+                    res = requests.get(f"{HARDWARE_API}/status/{slot}", timeout=2).json()
+                    if res.get("status") == "CLOSED":
+                        Clock.schedule_once(lambda dt, s=slot: setattr(self.hw_dialog_label, 'text', f"✅ ตู้ {s} ปิดเรียบร้อย\nกำลังบันทึกภาพ..."), 0)
+                        break
+                except:
+                    pass
+                time.sleep(0.5)
+                
+            # ปิดไฟสถานะหน้าตู้
+            try:
+                requests.post(f"{HARDWARE_API}/status-light/off", json={"address": slot, "transaction_id": str(transaction_id)}, timeout=3)
+            except:
+                pass
+            
+            # ⏳ จุดแก้ที่ 3: รอ 4 วินาที ให้ Camera Service ถ่ายรูป After และส่งคำสั่งตัด Relay กล้องให้เสร็จสมบูรณ์ ก่อนเริ่มตู้ถัดไป
+            print(f"⏳ รอระบบกล้องตู้ {slot} เคลียร์ตัวเอง 4 วินาที...")
+            time.sleep(4) 
+            
+        Clock.schedule_once(lambda dt: setattr(self.hw_dialog_label, 'text', "เสร็จสิ้น..."), 0)
+        Clock.schedule_once(lambda dt: self._on_hardware_sequence_complete("ทำรายการเติมยาสำเร็จและปิดตู้ครบถ้วน!"), 0)
 
-        except requests.RequestException as e:
-            toast(f"ข้อผิดพลาด: {str(e)}")
-            return
-
-        # ล้างตะกร้าและโหลดข้อมูลใหม่
+    def _on_hardware_sequence_complete(self, msg):
+        from kivymd.app import MDApp
+        
+        # รีเซ็ตหน้าจอใหม่ทั้งหมด
+        self.hw_dialog.dismiss()
         self.cart_items.clear()
-        self.load_data_from_api()  # รีโหลดข้อมูลจาก API
+        self.load_data_from_api()  
         self.refresh_cart_view()
         self.render_medicine_rows()
+        
+        app = MDApp.get_running_app()
         if app and hasattr(app, "complete_active_qr_task"):
             app.complete_active_qr_task()
-        toast("บันทึกการเติมยาสำเร็จ")
+            
+        toast(msg)
