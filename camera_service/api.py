@@ -155,7 +155,7 @@ def start_camera(req: CameraCommandRequest, background_tasks: BackgroundTasks):
     before_image_path = os.path.join(session_dir, "1_before.jpg")
 
     # เปิดการเชื่อมต่อกล้อง
-    cap = cv2.VideoCapture(VIDEO_INDEX)
+    cap = cv2.VideoCapture(VIDEO_INDEX, cv2.CAP_V4L2)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     

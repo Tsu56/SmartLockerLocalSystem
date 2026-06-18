@@ -191,6 +191,9 @@ class SmartLockerApp(MDApp):
         self.id_card_controller = IDCardController()
         self.id_card_controller.bind(card_data=self.handle_card_data)
 
+        self.qr_buffer = ""
+        Window.bind(on_key_down=self._on_key_down)
+
         for file in KV_FILES:
             if os.path.exists(file):
                 Builder.load_file(file)
@@ -554,9 +557,17 @@ class SmartLockerApp(MDApp):
     def change_screen(self, screen_name):
         if screen_name == "qr_scan_screen":
             self.ensure_english_keyboard_layout()
+
         self.root.current = screen_name
         self.current_screen_name = screen_name
         print(f"Changing screen to: {screen_name}")
+
+    def focus_qr_input(self, dt):
+        try:
+            qr_screen = self.root.get_screen("qr_scan_screen")
+            qr_screen.ids.qr_token_input.focus = True
+        except Exception as e:
+            print(f"Error focusing QR Input: {e}")
 
     def go_back(self):
         self.change_screen("main_screen")
@@ -564,6 +575,62 @@ class SmartLockerApp(MDApp):
     def show_toast(self, message):
         print(f"Toast: {message}")
         toast(message)
+
+    def _on_key_down(self, window, key, scancode, codepoint, modifiers):
+        """ตัวดักจับสัญญาณสแกนเนอร์ (อัปเกรดครอบคลุมทุก Layout และ Numpad)"""
+        
+        if getattr(self, 'current_screen_name', '') != "qr_scan_screen":
+            return False
+
+        # 1. เช็คปุ่ม Enter (รหัส 13 หรือ 271) เพื่อยืนยันการสแกนจบ
+        if key in [13, 271]:
+            if self.qr_buffer:
+                if self.qr_buffer.lower().startswith("qr-"):
+                    self.qr_buffer = "QR-" + self.qr_buffer[3:]
+                    
+                print(f"📦 สแกนสำเร็จ ได้รหัส: {self.qr_buffer}")
+                self.handle_qr_submit(self.qr_buffer) 
+                self.qr_buffer = "" # ล้างค่ารอรอบใหม่
+                try:
+                    qr_screen = self.root.get_screen("qr_scan_screen")
+                    qr_screen.ids.qr_token_input.text = "--- กรุณาสแกน QR Code ---"
+                except:
+                    pass
+            return True
+
+        char = ""
+        
+        # 2. ลองใช้ codepoint ก่อน (รับค่าตรงๆ ถ้าคีย์บอร์ด OS เป็นภาษาอังกฤษ)
+        if codepoint and codepoint.isascii() and (codepoint.isalnum() or codepoint == '-'):
+            char = codepoint
+        else:
+            # 3. ถ้าเป็นภาษาไทย หรือ codepoint เพี้ยน ให้มาแกะจากรหัสฮาร์ดแวร์ปุ่ม (key) แทน
+            if 65 <= key <= 90:  # โซน A-Z (บางเครื่องส่งมาเป็น Uppercase)
+                char = chr(key).lower()
+                if 'shift' in modifiers or 'capslock' in modifiers:
+                    char = char.upper()
+            elif 97 <= key <= 122:  # โซน a-z (มาตรฐาน)
+                char = chr(key)
+                if 'shift' in modifiers or 'capslock' in modifiers:
+                    char = char.upper()
+            elif 48 <= key <= 57:  # โซนตัวเลข 0-9 แถวบน
+                char = chr(key)
+            elif 256 <= key <= 265:  # โซนตัวเลข Numpad
+                char = str(key - 256)
+            elif key in [45, 269]:  # ปุ่มขีด (-) หรือ Numpad Minus
+                char = '-'
+                
+        # 4. นำตัวอักษรที่กรองแล้วมาต่อกันเข้า Buffer
+        if char:
+            self.qr_buffer += char
+            try:
+                qr_screen = self.root.get_screen("qr_scan_screen")
+                qr_screen.ids.qr_token_input.text = self.qr_buffer
+            except Exception:
+                pass
+            return True
+            
+        return False
     
 if __name__ == '__main__':
     SmartLockerApp().run()

@@ -6,7 +6,6 @@
     name: "qr_scan_screen"
     md_bg_color: LIGHT_BG
 
-    on_pre_enter: qr_token_input.focus = True
     on_leave:
         qr_token_input.focus = False
         qr_token_input.text = ""
@@ -39,13 +38,20 @@
                 orientation: "vertical"
                 spacing: "12dp"
 
-                MDTextField:
-                    id: qr_token_input
-                    hint_text: "QR token / task code"
-                    helper_text: "สแกนแล้วระบบจะตรวจสอบอัตโนมัติ"
-                    helper_text_mode: "persistent"
-                    multiline: False
-                    on_text_validate: app.handle_qr_submit(self.text)
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: "50dp"
+                    md_bg_color: get_color_from_hex("#E8ECEF") # สีพื้นหลังเทาอ่อนให้ดูคล้ายช่องกรอก
+                    radius: [8, 8, 8, 8]
+                    padding: "10dp"
+
+                    MDLabel:
+                        id: qr_token_input
+                        text: "--- กรุณาสแกน QR Code ---"
+                        halign: "center"
+                        font_style: "Subtitle1"
+                        theme_text_color: "Custom"
+                        text_color: get_color_from_hex("#2C3E50")
 
                 MDRectangleFlatButton:
                     text: "ตรวจสอบ QR"

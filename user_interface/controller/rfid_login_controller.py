@@ -28,6 +28,8 @@ class RFIDLoginScreen(MDScreen):
         self._stop_reading()
 
     def _poll_reader(self, dt):
+        print("🔍 กำลังเช็คบัตร RFID...")
+        
         """ฟังก์ชันแอบเช็คแบบไม่บล็อกหน้าจอ"""
         if not self.reader:
             return
